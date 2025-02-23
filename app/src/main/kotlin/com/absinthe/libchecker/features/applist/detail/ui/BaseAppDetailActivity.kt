@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
 import android.text.SpannableStringBuilder
-import android.text.format.Formatter
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
@@ -21,7 +20,6 @@ import androidx.core.text.buildSpannedString
 import androidx.core.text.scale
 import androidx.core.view.MenuProvider
 import androidx.core.view.isGone
-import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -91,6 +89,7 @@ import com.absinthe.libchecker.utils.extensions.getVersionCode
 import com.absinthe.libchecker.utils.extensions.getVersionString
 import com.absinthe.libchecker.utils.extensions.isKeyboardShowing
 import com.absinthe.libchecker.utils.extensions.setLongClickCopiedToClipboard
+import com.absinthe.libchecker.utils.extensions.sizeToString
 import com.absinthe.libchecker.utils.extensions.unsafeLazy
 import com.absinthe.libchecker.utils.harmony.ApplicationDelegate
 import com.absinthe.libchecker.utils.toJson
@@ -242,12 +241,12 @@ abstract class BaseAppDetailActivity :
               append(" Size: ")
             }
             var baseApkSize = FileUtils.getFileSize(ai.sourceDir)
-            val baseFormattedApkSize = Formatter.formatFileSize(this@BaseAppDetailActivity, baseApkSize)
+            val baseFormattedApkSize = baseApkSize.sizeToString(this@BaseAppDetailActivity, showBytes = false)
             val splitApkSizeList = PackageUtils.getSplitsSourceDir(packageInfo)
               ?.map {
                 val size = FileUtils.getFileSize(it)
                 baseApkSize += size
-                Formatter.formatFileSize(this@BaseAppDetailActivity, size)
+                size.sizeToString(this@BaseAppDetailActivity, showBytes = false)
               }
               ?.toMutableList()
 
@@ -255,7 +254,7 @@ abstract class BaseAppDetailActivity :
               append(baseFormattedApkSize)
             } else {
               splitApkSizeList.add(0, baseFormattedApkSize)
-              val totalSize = Formatter.formatFileSize(this@BaseAppDetailActivity, baseApkSize)
+              val totalSize = baseApkSize.sizeToString(this@BaseAppDetailActivity, showBytes = false)
               append(
                 splitApkSizeList.joinToString(separator = " + ", prefix = "(", postfix = " = $totalSize)")
               )
@@ -329,9 +328,6 @@ abstract class BaseAppDetailActivity :
             }
           }
         )
-      }
-      if (GlobalValues.processMode && processBarView == null) {
-        initProcessBarView()
       }
       if (this@BaseAppDetailActivity is ApkDetailActivity && PackageUtils.isAppInstalled(packageInfo.packageName)) {
         toolbarAdapter.addData(
@@ -524,46 +520,23 @@ abstract class BaseAppDetailActivity :
       }.launchIn(lifecycleScope)
       it.processToolIconVisibilityStateFlow.onEach { visible ->
         if (visible) {
-          if (detailFragmentManager.currentFragment?.isComponentFragment() == true) {
-            if (!toolbarAdapter.data.contains(toolbarProcessItem)) {
-              toolbarAdapter.addData(toolbarProcessItem)
-            }
-          }
-          if (detailFragmentManager.currentFragment?.isNativeSourceAvailable() == true) {
-            if (!toolbarAdapter.data.contains(toolbarProcessItem)) {
-              toolbarAdapter.addData(toolbarProcessItem)
-            }
-          }
-          if (GlobalValues.processMode || detailFragmentManager.currentFragment is PermissionAnalysisFragment) {
-            if (processBarView == null) {
-              initProcessBarView()
-            }
-            processBarView?.isVisible = true
-          } else {
-            processBarView?.isGone = true
+          if (!toolbarAdapter.data.contains(toolbarProcessItem)) {
+            toolbarAdapter.addData(toolbarProcessItem)
           }
         } else {
           if (toolbarAdapter.data.contains(toolbarProcessItem)) {
             toolbarAdapter.remove(toolbarProcessItem)
           }
-          if (detailFragmentManager.currentFragment !is PermissionAnalysisFragment) {
-            processBarView?.isGone = true
-          }
         }
       }.launchIn(lifecycleScope)
       it.processMapStateFlow.onEach { map ->
-        if (processBarView == null) {
-          initProcessBarView()
+        val list = map.map { mapItem ->
+          ProcessBarAdapter.ProcessBarItem(
+            mapItem.key,
+            mapItem.value
+          )
         }
-        processBarView?.setData(
-          map.map { mapItem ->
-            ProcessBarAdapter.ProcessBarItem(
-              mapItem.key,
-              mapItem.value
-            )
-          }
-        )
-        showProcessBarView()
+        setupProcessBarView(list)
       }.launchIn(lifecycleScope)
       it.featuresFlow.onEach { feat ->
         initFeatureListView()
@@ -680,6 +653,14 @@ abstract class BaseAppDetailActivity :
             featureAdapter.addData(
               FeatureItem(R.drawable.ic_16kb_align) {
                 FeaturesDialog.show16KBAlignDialog(this)
+              }
+            )
+          }
+
+          Features.Ext.ELF_PAGE_SIZE_16KB_COMPAT -> {
+            featureAdapter.addData(
+              FeatureItem(R.drawable.ic_16kb_compat) {
+                FeaturesDialog.show16KBCompatDialog(this)
               }
             )
           }
@@ -826,25 +807,8 @@ abstract class BaseAppDetailActivity :
       detailFragmentManager.deliverSwitchProcessMode()
       GlobalValues.processMode = !GlobalValues.processMode
 
-      if (GlobalValues.processMode) {
-        val processMap = viewModel.processMapStateFlow.value
-        if (processMap.isEmpty()) return@AppDetailToolbarItem
-        if (processBarView == null) {
-          initProcessBarView()
-        }
-        processBarView?.setData(
-          processMap.map { mapItem ->
-            ProcessBarAdapter.ProcessBarItem(
-              mapItem.key,
-              mapItem.value
-            )
-          }
-        )
-        processBarView?.isVisible = true
-      } else {
-        binding.detailToolbarContainer.removeView(processBarView)
-        processBarView = null
-
+      toggleProcessBarViewVisibility()
+      if (!GlobalValues.processMode) {
         doOnMainThreadIdle {
           viewModel.queriedProcess = null
           detailFragmentManager.deliverFilterItems(null, null, lifecycleScope)
@@ -972,15 +936,27 @@ abstract class BaseAppDetailActivity :
       }
     }
     binding.detailToolbarContainer.addView(processBarView)
-    showProcessBarView()
   }
 
-  private fun showProcessBarView() {
-    if (!viewModel.processToolIconVisibilityStateFlow.value && detailFragmentManager.currentFragment !is PermissionAnalysisFragment) {
-      processBarView?.isGone = true
+  private fun setupProcessBarView(list: List<ProcessBarAdapter.ProcessBarItem>) {
+    if (list.isEmpty()) {
+      if (processBarView?.parent != null) {
+        (processBarView?.parent as? ViewGroup)?.removeView(processBarView)
+        processBarView = null
+      }
     } else {
-      processBarView?.isVisible = true
+      if (processBarView == null) {
+        initProcessBarView()
+      }
+      toggleProcessBarViewVisibility()
+      processBarView?.setData(list)
     }
+  }
+
+  private fun toggleProcessBarViewVisibility() {
+    processBarView?.isGone =
+      !GlobalValues.processMode &&
+      detailFragmentManager.currentFragment?.hasNonGrantedPermissions() == false
   }
 
   private fun initAbiView(abi: Int, abiSet: Collection<Int>) {
@@ -993,7 +969,11 @@ abstract class BaseAppDetailActivity :
       val abiLabelsList = mutableListOf<AbiLabelNode>()
 
       if (abi >= Constants.MULTI_ARCH) {
-        abiLabelsList.add(AbiLabelNode(Constants.MULTI_ARCH, true))
+        abiLabelsList.add(
+          AbiLabelNode(Constants.MULTI_ARCH, true) {
+            FeaturesDialog.showMultiArchDialog(this)
+          }
+        )
       }
 
       abiSet.forEach {

@@ -28,7 +28,6 @@ import com.absinthe.libchecker.annotation.STATUS_START_REQUEST_CHANGE
 import com.absinthe.libchecker.annotation.STATUS_START_REQUEST_CHANGE_END
 import com.absinthe.libchecker.constant.Constants
 import com.absinthe.libchecker.constant.GlobalValues
-import com.absinthe.libchecker.constant.OnceTag
 import com.absinthe.libchecker.constant.options.LibReferenceOptions
 import com.absinthe.libchecker.data.app.LocalAppDataSource
 import com.absinthe.libchecker.database.Repositories
@@ -40,23 +39,22 @@ import com.absinthe.libchecker.services.IWorkerService
 import com.absinthe.libchecker.ui.base.IListController
 import com.absinthe.libchecker.utils.LCAppUtils
 import com.absinthe.libchecker.utils.PackageUtils
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.extensions.getAppName
 import com.absinthe.libchecker.utils.extensions.getFeatures
 import com.absinthe.libchecker.utils.extensions.getVersionCode
+import com.absinthe.libchecker.utils.extensions.isArchivedPackage
 import com.absinthe.libchecker.utils.harmony.ApplicationDelegate
 import com.absinthe.libchecker.utils.harmony.HarmonyOsUtil
 import com.absinthe.libraries.utils.manager.TimeRecorder
 import com.absinthe.rulesbundle.LCRules
 import com.absinthe.rulesbundle.Rule
-import com.microsoft.appcenter.analytics.Analytics
 import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import jonathanfinerty.once.Once
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -225,10 +223,10 @@ class HomeViewModel : ViewModel() {
     val newApps = localApps - dbApps
     val removedApps = dbApps - localApps
 
-      /*
-       * The application list returned with a probability only contains system applications.
-       * When the difference is greater than a certain threshold, we re-request the list.
-       */
+    /*
+     * The application list returned with a probability only contains system applications.
+     * When the difference is greater than a certain threshold, we re-request the list.
+     */
     if (!checked && (newApps.size > 30 || removedApps.size > 30)) {
       Timber.w("Request change canceled because of large diff, re-request appMap")
       launch {
@@ -270,13 +268,6 @@ class HomeViewModel : ViewModel() {
     timeRecorder.end()
     Timber.d("Request change: END, $timeRecorder")
     updateAppListStatus(STATUS_NOT_START)
-
-    if (!Once.beenDone(Once.THIS_APP_VERSION, OnceTag.HAS_COLLECT_LIB)) {
-      if (!isActive) return@launch
-      delay(10000)
-      collectPopularLibraries(appMap)
-      Once.markDone(OnceTag.HAS_COLLECT_LIB)
-    }
   }
 
   private fun generateLCItemFromPackageInfo(
@@ -293,17 +284,18 @@ class HomeViewModel : ViewModel() {
       Constants.VARIANT_APK
     }
 
+    val ai = pi.applicationInfo ?: throw IllegalArgumentException("ApplicationInfo is null")
     return LCItem(
       pi.packageName,
       pi.getAppName().toString(),
-      pi.versionName.toString(),
+      if (pi.isArchivedPackage()) "Archived" else pi.versionName.toString(),
       pi.getVersionCode(),
       pi.firstInstallTime,
       pi.lastUpdateTime,
-      (pi.applicationInfo!!.flags and ApplicationInfo.FLAG_SYSTEM) == ApplicationInfo.FLAG_SYSTEM,
+      (ai.flags and ApplicationInfo.FLAG_SYSTEM) > 0,
       PackageUtils.getAbi(pi).toShort(),
       if (delayInitFeatures) -1 else pi.getFeatures(),
-      pi.applicationInfo!!.targetSdkVersion.toShort(),
+      ai.targetSdkVersion.toShort(),
       variant
     )
   }
@@ -329,7 +321,7 @@ class HomeViewModel : ViewModel() {
       }
       val properties: MutableMap<String, String> = HashMap()
       properties["Version"] = Build.VERSION.SDK_INT.toString()
-      Analytics.trackEvent("OS Version", properties)
+      Telemetry.recordEvent("OS Version", properties)
 
       for (entry in map) {
         if (entry.value > 3 && LCAppUtils.getRuleWithRegex(entry.key, NATIVE) == null) {
@@ -337,7 +329,7 @@ class HomeViewModel : ViewModel() {
           properties["Library name"] = entry.key
           properties["Library count"] = entry.value.toString()
 
-          Analytics.trackEvent("Native Library", properties)
+          Telemetry.recordEvent("Native Library", properties)
         }
       }
 
@@ -397,7 +389,7 @@ class HomeViewModel : ViewModel() {
         properties["Library name"] = entry.key
         properties["Library count"] = entry.value.toString()
 
-        Analytics.trackEvent("$label Library", properties)
+        Telemetry.recordEvent("$label Library", properties)
       }
     }
   }
@@ -429,7 +421,7 @@ class HomeViewModel : ViewModel() {
     fun computeInternal(@LibType type: Int) = runBlocking {
       for (item in appMap.values) {
         if (!isActive) return@runBlocking
-        if (!showSystem && ((item.applicationInfo!!.flags and ApplicationInfo.FLAG_SYSTEM) == ApplicationInfo.FLAG_SYSTEM)) {
+        if (!showSystem && ((item.applicationInfo!!.flags and ApplicationInfo.FLAG_SYSTEM) > 0)) {
           progressCount++
           updateLibRefProgressImpl()
           continue

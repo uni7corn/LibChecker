@@ -3,7 +3,6 @@ package com.absinthe.libchecker.features.applist.detail.ui.adapter
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.TransitionDrawable
 import android.graphics.drawable.shapes.OvalShape
@@ -11,10 +10,13 @@ import android.graphics.text.LineBreaker
 import android.text.Layout
 import android.text.Spannable
 import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.SpannedString
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.view.ViewGroup
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.graphics.drawable.toDrawable
 import androidx.core.os.bundleOf
 import androidx.core.text.buildSpannedString
 import androidx.core.text.inSpans
@@ -25,6 +27,7 @@ import androidx.fragment.app.FragmentManager
 import coil.load
 import com.absinthe.libchecker.R
 import com.absinthe.libchecker.annotation.ET_DYN
+import com.absinthe.libchecker.annotation.ET_NOT_ELF
 import com.absinthe.libchecker.annotation.LibType
 import com.absinthe.libchecker.annotation.METADATA
 import com.absinthe.libchecker.annotation.NATIVE
@@ -34,6 +37,7 @@ import com.absinthe.libchecker.constant.GlobalValues
 import com.absinthe.libchecker.constant.options.AdvancedOptions
 import com.absinthe.libchecker.features.applist.detail.ui.EXTRA_TEXT
 import com.absinthe.libchecker.features.applist.detail.ui.XmlBSDFragment
+import com.absinthe.libchecker.features.applist.detail.ui.view.CenterAlignImageSpan
 import com.absinthe.libchecker.features.applist.detail.ui.view.ComponentLibItemView
 import com.absinthe.libchecker.features.applist.detail.ui.view.MetadataLibItemView
 import com.absinthe.libchecker.features.applist.detail.ui.view.NativeLibItemView
@@ -45,11 +49,13 @@ import com.absinthe.libchecker.ui.adapter.HighlightAdapter
 import com.absinthe.libchecker.utils.OsUtils
 import com.absinthe.libchecker.utils.PackageUtils
 import com.absinthe.libchecker.utils.UiUtils
+import com.absinthe.libchecker.utils.extensions.PAGE_SIZE_16_KB
+import com.absinthe.libchecker.utils.extensions.dp
 import com.absinthe.libchecker.utils.extensions.getColor
 import com.absinthe.libchecker.utils.extensions.getColorByAttr
 import com.absinthe.libchecker.utils.extensions.getResourceIdByAttr
-import com.absinthe.libchecker.utils.extensions.tintTextToPrimary
 import com.absinthe.libchecker.utils.manifest.ResourceParser
+import com.absinthe.libchecker.view.drawable.CapsuleDrawable
 import com.chad.library.adapter.base.viewholder.BaseViewHolder
 import timber.log.Timber
 
@@ -150,11 +156,8 @@ class LibStringAdapter(
 
       else -> {
         (holder.itemView as ComponentLibItemView).apply {
-          processLabelColor = if (item.item.process.isNullOrEmpty() || !processMode) {
-            -1
-          } else {
-            processMap[item.item.process] ?: UiUtils.getRandomColor()
-          }
+          processLabelColor = item.item.process.takeIf { !it.isNullOrEmpty() && processMode }
+            ?.let { processMap[it] ?: UiUtils.getRandomColor() } ?: -1
           setOrHighlightText(libName, itemName)
           if ((GlobalValues.itemAdvancedOptions and AdvancedOptions.SHOW_MARKED_LIB) > 0) {
             setChip(item.rule)
@@ -175,8 +178,8 @@ class LibStringAdapter(
     } else {
       val drawable = TransitionDrawable(
         listOf(
-          ColorDrawable(Color.TRANSPARENT),
-          ColorDrawable(R.color.highlight_component.getColor(context))
+          Color.TRANSPARENT.toDrawable(),
+          R.color.highlight_component.getColor(context).toDrawable()
         ).toTypedArray()
       )
       holder.itemView.background = drawable
@@ -206,16 +209,27 @@ class LibStringAdapter(
       processMap[item.item.process] ?: UiUtils.getRandomColor()
     }
     setOrHighlightText(itemView.libName, itemName)
-    itemView.libSize.text = PackageUtils.sizeToString(context, item.item, showElfInfo = true, is64Bit = is64Bit)
+    itemView.libSize.text = PackageUtils.sizeToString(context, item.item)
     if ((GlobalValues.itemAdvancedOptions and AdvancedOptions.SHOW_MARKED_LIB) > 0) {
       itemView.setChip(item.rule)
     } else {
       itemView.setChip(null)
     }
 
-    if (item.item.elfType != ET_DYN) {
-      itemView.libName.tintTextToPrimary()
-      itemView.libSize.tintTextToPrimary()
+    val elfInfo = item.item.elfInfo
+    if (elfInfo.elfType != ET_DYN) {
+      val text = PackageUtils.elfTypeToString(elfInfo.elfType)
+      itemView.libSize.append(createNativeLabelSpan(text))
+    }
+    if (elfInfo.elfType != ET_NOT_ELF) {
+      if (elfInfo.pageSize % PAGE_SIZE_16_KB == 0) {
+        val text = "16 KB"
+        itemView.libSize.append(createNativeLabelSpan(text))
+      }
+      if (elfInfo.uncompressedAndNot16KB) {
+        val text = "NON 16 KB STORED"
+        itemView.libSize.append(createNativeLabelSpan(text))
+      }
     }
   }
 
@@ -374,5 +388,22 @@ class LibStringAdapter(
         }
       }
     }
+  }
+
+  private fun createNativeLabelSpan(text: String): SpannedString = buildSpannedString {
+    append(" $text ")
+    val capsuleDrawable = CapsuleDrawable(
+      context = context,
+      text = text,
+      textSize = 10.dp.toFloat(),
+      textColor = context.getColorByAttr(com.google.android.material.R.attr.colorOnSecondaryContainer),
+      backgroundColor = context.getColorByAttr(com.google.android.material.R.attr.colorSecondaryContainer),
+      borderColor = context.getColorByAttr(com.google.android.material.R.attr.colorOutline),
+      borderWidth = 1f,
+      cornerRadius = 5.dp.toFloat()
+    )
+    capsuleDrawable.setBounds(0, 0, capsuleDrawable.intrinsicWidth, capsuleDrawable.intrinsicHeight)
+    val span = CenterAlignImageSpan(capsuleDrawable)
+    setSpan(span, 1, 1 + text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
   }
 }

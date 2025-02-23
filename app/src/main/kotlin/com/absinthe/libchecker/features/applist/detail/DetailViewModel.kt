@@ -1,7 +1,6 @@
 package com.absinthe.libchecker.features.applist.detail
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.util.SparseArray
@@ -21,6 +20,10 @@ import com.absinthe.libchecker.api.request.CloudRuleBundleRequest
 import com.absinthe.libchecker.api.request.LibDetailRequest
 import com.absinthe.libchecker.compat.PackageManagerCompat
 import com.absinthe.libchecker.constant.AbilityType
+import com.absinthe.libchecker.constant.Constants.ERROR
+import com.absinthe.libchecker.constant.Constants.MULTI_ARCH
+import com.absinthe.libchecker.constant.Constants.NO_LIBS
+import com.absinthe.libchecker.constant.Constants.OVERLAY
 import com.absinthe.libchecker.constant.GlobalValues
 import com.absinthe.libchecker.database.Repositories
 import com.absinthe.libchecker.database.entity.Features
@@ -36,6 +39,7 @@ import com.absinthe.libchecker.utils.LCAppUtils
 import com.absinthe.libchecker.utils.OsUtils
 import com.absinthe.libchecker.utils.PackageUtils
 import com.absinthe.libchecker.utils.UiUtils
+import com.absinthe.libchecker.utils.extensions.ABI_STRING_MAP
 import com.absinthe.libchecker.utils.extensions.getAGPVersion
 import com.absinthe.libchecker.utils.extensions.getFeatures
 import com.absinthe.libchecker.utils.extensions.getJetpackComposeVersion
@@ -46,6 +50,7 @@ import com.absinthe.libchecker.utils.extensions.getRxKotlinVersion
 import com.absinthe.libchecker.utils.extensions.getSignatures
 import com.absinthe.libchecker.utils.extensions.getStatefulPermissionsList
 import com.absinthe.libchecker.utils.extensions.is16KBAligned
+import com.absinthe.libchecker.utils.extensions.isPageSizeCompat
 import com.absinthe.libchecker.utils.extensions.isUseKMP
 import com.absinthe.libchecker.utils.extensions.toClassDefType
 import com.absinthe.libchecker.utils.harmony.ApplicationDelegate
@@ -59,6 +64,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ohos.bundle.AbilityInfo
@@ -67,6 +74,8 @@ import retrofit2.HttpException
 import timber.log.Timber
 
 class DetailViewModel : ViewModel() {
+  private var allNativeLibItems: Map<String, List<LibStringItem>> = emptyMap()
+  val nativeLibTabs: MutableStateFlow<Collection<String>?> = MutableStateFlow(null)
   val nativeLibItems: MutableStateFlow<List<LibStringItemChip>?> = MutableStateFlow(null)
   val staticLibItems: MutableStateFlow<List<LibStringItemChip>?> = MutableStateFlow(null)
   val metaDataItems: MutableStateFlow<List<LibStringItemChip>?> = MutableStateFlow(null)
@@ -106,35 +115,45 @@ class DetailViewModel : ViewModel() {
     return this::packageInfo.isInitialized
   }
 
-  fun initSoAnalysisData() = viewModelScope.launch(Dispatchers.IO) {
-    val list = ArrayList<LibStringItemChip>()
-    val sourceSet = hashSetOf<String>()
+  private var initSoAnalysisJob: Job? = null
 
-    try {
-      packageInfo.applicationInfo?.let { info ->
-        list.addAll(
-          getNativeChipList(info, PackageUtils.getAbi(packageInfo, isApk))
-        )
+  fun initSoAnalysisData() {
+    if (initSoAnalysisJob != null) return
+    initSoAnalysisJob = viewModelScope.launch(Dispatchers.IO) {
+      val sourceSet = hashSetOf<String>()
+
+      val abi = (abiBundleStateFlow.value ?: abiBundleStateFlow.filterNotNull().first()).abi
+      val specifiedAbi = if (abi == ERROR || abi == NO_LIBS || abi == OVERLAY) abi else null
+      allNativeLibItems = PackageUtils.getSourceLibs(packageInfo, specifiedAbi = specifiedAbi, parseElf = true)
+
+      // TODO
+      val sourceMap = sourceSet.filter { source -> source.isNotEmpty() }
+        .associateWith { UiUtils.getRandomColor() }
+      nativeSourceMap = sourceMap
+
+      if (sourceMap.isNotEmpty()) {
+        processMapStateFlow.emit(sourceMap)
       }
-    } catch (e: PackageManager.NameNotFoundException) {
-      Timber.e(e)
-    }
 
-    list.forEach { item ->
-      item.item.process?.let { process ->
-        sourceSet.add(process)
+      nativeLibTabs.emit(allNativeLibItems.keys)
+      if (allNativeLibItems.isEmpty()) {
+        nativeLibItems.emit(emptyList())
+      }
+
+      allNativeLibItems[ABI_STRING_MAP[abi % MULTI_ARCH]]?.let {
+        if (packageInfo.is16KBAligned(libs = it, isApk = isApk)) {
+          _featuresFlow.emit(VersionedFeature(Features.Ext.ELF_PAGE_SIZE_16KB))
+        }
       }
     }
-    val sourceMap = sourceSet.filter { source -> source.isNotEmpty() }
-      .associateWith { UiUtils.getRandomColor() }
-    nativeSourceMap = sourceMap
+  }
 
-    if (sourceMap.isNotEmpty()) {
-      processMapStateFlow.emit(sourceMap)
-      processToolIconVisibilityStateFlow.emit(true)
+  fun loadSoAnalysisData(tab: String) {
+    allNativeLibItems[tab]?.let {
+      viewModelScope.launch(Dispatchers.IO) {
+        nativeLibItems.emit(getNativeChipList(it))
+      }
     }
-
-    nativeLibItems.emit(list)
   }
 
   fun initStaticData() = viewModelScope.launch(Dispatchers.IO) {
@@ -265,20 +284,16 @@ class DetailViewModel : ViewModel() {
     }.getOrNull()
   }
 
-  private suspend fun getNativeChipList(
-    info: ApplicationInfo,
-    specifiedAbi: Int? = null
-  ): List<LibStringItemChip> {
-    val list =
-      PackageUtils.getNativeDirLibs(packageInfo, specifiedAbi = specifiedAbi).toMutableList()
+  private suspend fun getNativeChipList(list: List<LibStringItem>): List<LibStringItemChip> {
     val chipList = mutableListOf<LibStringItemChip>()
     var rule: Rule?
 
     if (list.isEmpty()) {
       return chipList
     } else {
+      val packageName = packageInfo.packageName
       list.forEach {
-        rule = LCAppUtils.getRuleWithRegex(it.name, NATIVE, info.packageName, list)
+        rule = LCAppUtils.getRuleWithRegex(it.name, NATIVE, packageName, list)
         chipList.add(LibStringItemChip(it, rule))
       }
       if (GlobalValues.libSortMode == MODE_SORT_BY_SIZE) {
@@ -517,7 +532,7 @@ class DetailViewModel : ViewModel() {
 
     _featuresFlow.emit(VersionedFeature(Features.Ext.APPLICATION_PROP))
 
-    if (OsUtils.atLeastR()) {
+    if (OsUtils.atLeastR() && !isApk) {
       runCatching {
         val info = PackageUtils.getInstallSourceInfo(packageInfo.packageName)
         if (info?.installingPackageName != null) {
@@ -528,8 +543,8 @@ class DetailViewModel : ViewModel() {
       }
     }
 
-    if (packageInfo.is16KBAligned(isApk)) {
-      _featuresFlow.emit(VersionedFeature(Features.Ext.ELF_PAGE_SIZE_16KB))
+    if (OsUtils.atLeastBaklava() && packageInfo.isPageSizeCompat()) {
+      _featuresFlow.emit(VersionedFeature(Features.Ext.ELF_PAGE_SIZE_16KB_COMPAT))
     }
 
     packageInfo.applicationInfo?.sourceDir?.let { sourceDir ->

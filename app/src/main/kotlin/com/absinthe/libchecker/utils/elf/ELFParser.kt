@@ -23,6 +23,9 @@ class ELFParser(inputStream: InputStream) {
   var e_shstrndx: Short = 0
   val programHeaders: MutableList<ProgramHeader> = mutableListOf()
 
+  var readBytes: Long = 0
+    private set
+
   init {
     parse(inputStream)
   }
@@ -48,24 +51,35 @@ class ELFParser(inputStream: InputStream) {
     return e_ident.EI_CLASS.toInt()
   }
 
-  fun getPageSize(): Int {
-    return (programHeaders.find { it.p_type == ProgramHeader.PT_LOAD }?.p_align ?: 4096).toInt()
+  fun getMinPageSize(): Int {
+    var minAlign: Long? = null
+    programHeaders.forEach {
+      if (it.p_type == ProgramHeader.PT_LOAD) {
+        minAlign = minAlign?.coerceAtMost(it.p_align) ?: it.p_align
+      }
+    }
+    return minAlign?.toInt() ?: -1
   }
 
   private fun parse(inputStream: InputStream) {
-    inputStream.use {
+    inputStream.also {
       val e_ident_array = ByteArray(EI_NIDENT)
-      it.read(e_ident_array)
+      readBytes += it.read(e_ident_array)
       e_ident = EIdent(e_ident_array)
+
+      if (!isElf()) {
+        return@also
+      }
 
       val ehSize = when (getEClass()) {
         EIdent.ELFCLASS32 -> 52 - EI_NIDENT // 32-bit ELF header size
         EIdent.ELFCLASS64 -> 64 - EI_NIDENT // 64-bit ELF header size
-        else -> return@use
+        else -> return@also
       }
-      val byteOrder = if (e_ident.EI_DATA.toInt() == EIdent.ELFDATA2MSB) ByteOrder.BIG_ENDIAN else ByteOrder.LITTLE_ENDIAN
+      val byteOrder =
+        if (e_ident.EI_DATA.toInt() == EIdent.ELFDATA2MSB) ByteOrder.BIG_ENDIAN else ByteOrder.LITTLE_ENDIAN
       val buffer = ByteBuffer.allocate(ehSize).order(byteOrder)
-      it.read(buffer.array())
+      readBytes += it.read(buffer.array())
 
       when (getEClass()) {
         EIdent.ELFCLASS32 -> {
@@ -101,7 +115,7 @@ class ELFParser(inputStream: InputStream) {
         }
 
         else -> {
-          return@use
+          return@also
         }
       }
 
@@ -109,7 +123,7 @@ class ELFParser(inputStream: InputStream) {
       if (e_phoff > 0 && e_phnum > 0) {
         for (i in 0 until e_phnum) {
           val phBuffer = ByteBuffer.allocate(e_phentsize.toInt()).order(byteOrder)
-          it.read(phBuffer.array())
+          readBytes += it.read(phBuffer.array())
 
           val programHeader = if (getEClass() == EIdent.ELFCLASS32) {
             ProgramHeader(

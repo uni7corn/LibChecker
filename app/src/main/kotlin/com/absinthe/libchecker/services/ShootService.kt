@@ -248,7 +248,7 @@ class ShootService : LifecycleService() {
               versionCode = info.getVersionCode(),
               installedTime = info.firstInstallTime,
               lastUpdatedTime = info.lastUpdateTime,
-              isSystem = (ai.flags and ApplicationInfo.FLAG_SYSTEM) == ApplicationInfo.FLAG_SYSTEM,
+              isSystem = (ai.flags and ApplicationInfo.FLAG_SYSTEM) > 0,
               abi = PackageUtils.getAbi(info).toShort(),
               targetApi = ai.targetSdkVersion.toShort(),
               nativeLibs = PackageUtils.getNativeDirLibs(info).toJson().orEmpty(),
@@ -329,11 +329,11 @@ class ShootService : LifecycleService() {
     GlobalValues.snapshotTimestamp = ts
     _isShooting = false
     notifyFinished(ts)
+    ServiceCompat.stopForeground(this@ShootService, ServiceCompat.STOP_FOREGROUND_REMOVE)
     Timber.i("computeSnapshots end")
     isComputing = false
 
     if (stopWhenFinish) {
-      ServiceCompat.stopForeground(this@ShootService, ServiceCompat.STOP_FOREGROUND_REMOVE)
       stopSelf()
     }
   }

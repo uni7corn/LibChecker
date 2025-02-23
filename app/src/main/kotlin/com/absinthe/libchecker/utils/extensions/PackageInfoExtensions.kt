@@ -1,6 +1,5 @@
 package com.absinthe.libchecker.utils.extensions
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
@@ -17,8 +16,10 @@ import com.absinthe.libchecker.constant.Constants.ARMV5
 import com.absinthe.libchecker.constant.Constants.ARMV5_STRING
 import com.absinthe.libchecker.constant.Constants.ARMV7
 import com.absinthe.libchecker.constant.Constants.ARMV7_STRING
+import com.absinthe.libchecker.constant.Constants.ARMV7_STRING_UNDERLINE
 import com.absinthe.libchecker.constant.Constants.ARMV8
 import com.absinthe.libchecker.constant.Constants.ARMV8_STRING
+import com.absinthe.libchecker.constant.Constants.ARMV8_STRING_UNDERLINE
 import com.absinthe.libchecker.constant.Constants.ERROR
 import com.absinthe.libchecker.constant.Constants.MIPS
 import com.absinthe.libchecker.constant.Constants.MIPS64
@@ -43,8 +44,8 @@ import com.absinthe.libchecker.utils.PackageUtils
 import com.absinthe.libchecker.utils.fromJson
 import com.absinthe.libchecker.utils.manifest.HiddenPermissionsReader
 import com.absinthe.libchecker.utils.manifest.ManifestReader
-import dalvik.system.DexFile
 import dev.rikka.tools.refine.Refine
+import hidden.DexFileHidden
 import java.io.File
 import java.text.DateFormat
 import java.util.Properties
@@ -664,26 +665,14 @@ fun PackageInfo.isPreinstalled(): Boolean {
   return lastUpdateTime <= PREINSTALLED_TIMESTAMP
 }
 
-@Suppress("UNCHECKED_CAST")
-@SuppressLint("SoonBlockedPrivateApi")
-fun PackageInfo.getDexoptInfo(): Pair<String, String>? {
+fun PackageInfo.getDexFileOptimizationInfo(): DexFileHidden.OptimizationInfo? {
   val sourceDir = applicationInfo?.sourceDir ?: return null
-  val ret: Array<String>? = runCatching {
-    val method = DexFile::class.java.getDeclaredMethod(
-      "getDexFileOptimizationStatus",
-      String::class.java,
-      String::class.java
-    )
-    method.isAccessible = true
-    method.invoke(
-      null,
-      sourceDir,
-      ABI_TO_INSTRUCTION_SET_MAP[Build.SUPPORTED_ABIS[0]]
-    ) as Array<String>
-  }.getOrNull()
-
-  Timber.d("getDexoptInfo: ${ret?.contentToString()}")
-  return ret?.takeIf { it.size == 2 }?.let { it[0] to it[1] }
+  val info = DexFileHidden.getDexFileOptimizationInfo(
+    sourceDir,
+    ABI_TO_INSTRUCTION_SET_MAP[Build.SUPPORTED_ABIS[0]]!!
+  )
+  Timber.d("getDexFileOptimizationInfo: status=${info.status}, reason=${info.reason}")
+  return info
 }
 
 // Keep in sync with `ABI_TO_INSTRUCTION_SET_MAP` in
@@ -709,11 +698,15 @@ val INSTRUCTION_SET_MAP_TO_ABI_VALUE = mapOf(
   "riscv32" to RISCV32
 )
 
+val ABI_VALUE_TO_INSTRUCTION_SET_MAP = INSTRUCTION_SET_MAP_TO_ABI_VALUE.entries.associate { (k, v) -> v to k }
+
 val ABI_64_BIT = setOf(ARMV8, X86_64, MIPS64, RISCV64)
 val ABI_32_BIT = setOf(ARMV5, ARMV7, X86, MIPS, RISCV32)
 
 val STRING_ABI_MAP = mapOf(
+  ARMV8_STRING_UNDERLINE to ARMV8,
   ARMV8_STRING to ARMV8,
+  ARMV7_STRING_UNDERLINE to ARMV7,
   ARMV7_STRING to ARMV7,
   ARMV5_STRING to ARMV5,
   X86_64_STRING to X86_64,
@@ -757,9 +750,11 @@ const val PAGE_SIZE_4_KB = 0x1000
  * An app is considered to be 16KB-aligned only if:
  * - There's at least one native library present
  * - All native libraries have page sizes that are multiples of 16 KB
+ * - None of the native libraries are uncompressed and not 16 KB-aligned
+ * @see <a href="https://cs.android.com/android-studio/platform/tools/base/+/mirror-goog-studio-main:sdk-common/src/main/java/com/android/ide/common/pagealign/PageAlignUtils.kt">Ref</a>
  *
  */
-fun PackageInfo.is16KBAligned(isApk: Boolean = false): Boolean {
+fun PackageInfo.is16KBAligned(libs: List<LibStringItem>? = null, isApk: Boolean = false): Boolean {
   val sourceDir = applicationInfo?.sourceDir ?: return false
 
   val file = File(sourceDir)
@@ -767,11 +762,19 @@ fun PackageInfo.is16KBAligned(isApk: Boolean = false): Boolean {
     return false
   }
 
-  val nativeLibs = PackageUtils.getNativeDirLibs(
-    packageInfo = this,
-    specifiedAbi = PackageUtils.getAbi(this, isApk = isApk)
-  )
-  return nativeLibs.isNotEmpty() && nativeLibs.all { it.pageSize % PAGE_SIZE_16_KB == 0 }
+  val nativeLibs = libs ?: run {
+    val abi = PackageUtils.getAbi(this, isApk = isApk)
+    val abiString = ABI_STRING_MAP[abi % MULTI_ARCH]
+    PackageUtils.getSourceLibs(
+      packageInfo = this,
+      specifiedAbi = abi,
+      parseElf = true
+    )[abiString] ?: emptyList()
+  }
+
+  return nativeLibs.isNotEmpty() &&
+    nativeLibs.all { it.elfInfo.pageSize % PAGE_SIZE_16_KB == 0 } &&
+    nativeLibs.all { it.elfInfo.uncompressedAndNot16KB.not() }
 }
 
 /**
@@ -795,4 +798,23 @@ fun PackageInfo.isUseKMP(foundList: List<String>? = null): Boolean {
   )
   val foundInDex = realFoundList.contains("org.jetbrains.compose.*".toClassDefType())
   return foundInDex
+}
+
+fun PackageInfo.isArchivedPackage(): Boolean {
+  return OsUtils.atLeastV() && archiveTimeMillis > 0
+}
+
+/**
+ * Check if an app is 16 kb backcompat
+ * @return True if is 16 kb backcompat
+ * https://source.android.com/docs/core/architecture/16kb-page-size/16kb-backcompat-option
+ */
+fun PackageInfo.isPageSizeCompat(): Boolean {
+  runCatching {
+    val demands = ManifestReader.getManifestProperties(
+      File(applicationInfo!!.sourceDir),
+      arrayOf("pageSizeCompat")
+    )
+    return demands["pageSizeCompat"] as? String == "enabled"
+  }.getOrNull() ?: return false
 }

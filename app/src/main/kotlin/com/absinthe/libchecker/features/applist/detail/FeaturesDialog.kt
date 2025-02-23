@@ -21,6 +21,7 @@ import com.absinthe.libchecker.features.applist.detail.ui.AppPropBottomSheetDial
 import com.absinthe.libchecker.features.applist.detail.ui.EXTRA_PACKAGE_INFO
 import com.absinthe.libchecker.features.applist.detail.ui.EXTRA_PACKAGE_NAME
 import com.absinthe.libchecker.ui.base.BaseAlertDialogBuilder
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.Toasty
 import com.absinthe.libchecker.utils.UiUtils
 import timber.log.Timber
@@ -178,6 +179,28 @@ object FeaturesDialog {
     )
   }
 
+  fun show16KBCompatDialog(context: Context) {
+    commonShowDialogImpl(
+      context,
+      R.drawable.ic_16kb_compat,
+      R.string.lib_detail_dialog_title_16kb_page_size_compat,
+      R.string.lib_detail_dialog_content_16kb_page_size_compat,
+      version = null,
+      sourceLink = "https://source.android.com/docs/core/architecture/16kb-page-size/16kb-backcompat-option"
+    )
+  }
+
+  fun showMultiArchDialog(context: Context) {
+    commonShowDialogImpl(
+      context,
+      R.drawable.ic_abi_label_multi_arch,
+      R.string.multiArch,
+      R.string.multi_arch_dialog_details,
+      version = null,
+      sourceLink = "https://source.android.com/docs/setup/create/64-bit-builds"
+    )
+  }
+
   private fun commonShowDialogImpl(
     context: Context,
     icon: Drawable,
@@ -222,7 +245,7 @@ object FeaturesDialog {
     val dialog = BaseAlertDialogBuilder(context)
       .setIcon(icon)
       .setTitle(titleRes)
-      .setMessage(messageRes)
+      .setMessage(HtmlCompat.fromHtml(context.getString(messageRes), HtmlCompat.FROM_HTML_MODE_COMPACT))
       .setPositiveButton(android.R.string.ok, null)
 
     versionInfo?.let { info ->
@@ -253,5 +276,9 @@ object FeaturesDialog {
     }
 
     dialog.show()
+    Telemetry.recordEvent(
+      "FeatureDialog",
+      mapOf("Feature" to context.getString(titleRes))
+    )
   }
 }
