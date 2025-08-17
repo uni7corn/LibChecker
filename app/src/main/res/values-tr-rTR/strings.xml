@@ -24,11 +24,12 @@
   <string name="uncharted_territory">Keşfedilmemiş bölge</string>
   <string name="get_app_list_denied_tip">Lütfen LibChecker\'a\n\"Yüklü uygulamalar hakkında bilgi al\"\niznini verin</string>
   <string name="advanced_menu">Gelişmiş Menü</string>
+  <string name="archived_app">Arşivlenmiş uygulama</string>
   <!-- Statistics   -->
   <string name="title_statistics_dialog">%s ABI\'ye sahip uygulamalar</string>
   <string name="title_statistics_dialog_no_native_libs">Yerel kütüphanesi olmayan uygulamalar</string>
   <string name="tab_chart">Grafik</string>
-  <string name="tab_lib_reference_statistics">Kütüphane referansı</string>
+  <string name="tab_lib_reference_statistics">Kütüphane Referansı</string>
   <string name="not_marked_lib">İşaretlenmemiş kütüphane</string>
   <string name="submenu_title_component">Bileşen</string>
   <string name="submenu_title_manifest">Manifest</string>
@@ -45,6 +46,7 @@
   <string name="ref_category_shared_uid">Paylaşılan UID</string>
   <string name="ref_category_signatures">İmzalar</string>
   <string name="ref_category_only_not_marked">Sadece İşaretlenmemişler</string>
+  <string name="ref_category_action">Eylem</string>
   <string name="string_kotlin_used">Kotlin Kullanılmış</string>
   <string name="string_kotlin_unused">Kotlin Kullanılmamış</string>
   <string name="string_compose_used">Jetpack Compose Kullanılmış</string>
@@ -93,7 +95,7 @@
   <string name="reload_apps_summary">Uygulama listesi anormal görüntülendiğinde deneyin</string>
   <string name="help_docs_summary">LibChecker\'ı nasıl kullanacağınızı öğrenin</string>
   <string name="join_telegram_group_summary">Telegram grubumuza katılın</string>
-  <string name="anonymous_statistics_summary">LibChecker\'ı daha pratik hale getirmek için en sık kullanılan işaretli kütüphaneleri ve bazı kullanım alışkanlıkları verilerini anonim olarak göndermek için Microsoft AppCenter kullanıyoruz</string>
+  <string name="anonymous_statistics_summary">LibChecker\'ı daha pratik hale getirmek için en sık kullanılan işaretli kütüphaneleri ve bazı kullanım alışkanlıkları verilerini anonim olarak göndermek için Google Firebase kullanıyoruz</string>
   <string name="cloud_rules_summary">En son işaretlenmiş kütüphane kurallarını buradan güncelleyin</string>
   <string name="array_dark_mode_off">Kapalı</string>
   <string name="array_dark_mode_on">Açık</string>
@@ -124,10 +126,13 @@
   <string name="pwa_details">Progressive Web Apps (PWA\'lar), gelişmiş yetenekler, güvenilirlik ve yüklenebilirlik sunmak için modern API\'lerle oluşturulur ve geliştirilir ve tek bir kod tabanıyla herhangi bir cihazda herkese ulaşır.</string>
   <string name="jetpack_compose_details">Jetpack Compose, Android\'in yerel kullanıcı arayüzü oluşturmak için modern araç setidir. Android\'de kullanıcı arayüzü geliştirmeyi basitleştirir ve hızlandırır. Daha az kod, güçlü araçlar ve sezgisel Kotlin API\'leri ile uygulamanızı hızlıca hayata geçirin.</string>
   <string name="jetbrain_compose_multiplatform_details">Compose Multiplatform, JetBrains tarafından geliştirilen modern, deklaratif ve tepkisel bir UI (kullanıcı arayüzü) framework\'üdür. Az miktarda Kotlin kodu ile kullanıcı arayüzleri oluşturmanın basit bir yolunu sunar. Ayrıca, kullanıcı arayüzünüzü bir kez yazıp desteklenen tüm platformlarda – iOS, Android, masaüstü (Windows, macOS, Linux) ve web – çalıştırmanıza olanak tanır.</string>
+  <string name="multi_arch_dialog_details"><![CDATA[Bir uygulama 32 bit veya 64 bit olabilen diğer uygulamalara bir API sunuyorsa, olası hataları önlemek için uygulamanın manifestosunda <b>android:multiarch</b> özelliğinin true olarak ayarlanmış olması gerekir.]]></string>
   <string name="extract_native_libs_tip">Uygulama şunu beyan eder: </string>
   <string name="xml_detail">XML Ayrıntısı</string>
   <string name="lib_detail_dialog_title_16kb_page_size">16 KB Sayfa Boyutu</string>
   <string name="lib_detail_dialog_content_16kb_page_size">Tarihsel olarak, Android yalnızca 4 KB bellek sayfa boyutlarını desteklemiş ve bu da Android cihazların tipik olarak sahip olduğu ortalama toplam bellek miktarı için sistem belleği performansını optimize etmiştir. Android 15\'ten itibaren AOSP, 16 KB sayfa boyutu (16 KB cihazlar) kullanacak şekilde yapılandırılmış cihazları desteklemektedir. Uygulamanız doğrudan veya dolaylı olarak bir SDK aracılığıyla herhangi bir NDK kütüphanesi kullanıyorsa, uygulamanızı bu 16 KB cihazlarda çalışması için yeniden oluşturmanız gerekecektir.</string>
+  <string name="lib_detail_dialog_title_16kb_page_size_compat">16 KB Backcompat</string>
+  <string name="lib_detail_dialog_content_16kb_page_size_compat"><![CDATA[Android 15, platformun performansını optimize etmek için 16 KB bellek sayfaları desteğini getirdi. Android 16 ise bir uyumluluk modu ekleyerek, 4 KB bellek sayfaları için oluşturulmuş bazı uygulamaların 16 KB bellek sayfalarıyla yapılandırılmış bir cihazda çalışmasına olanak tanır.\n\nEğer Android, uygulamanızın 4 KB hizalanmış bellek sayfalarına sahip olduğunu algılarsa, otomatik olarak uyumluluk modunu kullanır ve kullanıcıya bir bildirim penceresi gösterir. Uygulamanız başlatıldığında bu pencerenin görüntülenmesini önlemek için <b>AndroidManifest.xml</b> dosyasında <b>android:pageSizeCompat</b> özelliğini ayarlayarak geriye dönük uyumluluk modunu etkinleştirebilirsiniz. En iyi performans, güvenilirlik ve kararlılık için uygulamanızın yine de 16 KB hizalanmış olması önerilir.]]></string>
   <string name="format_last_updated">Güncellenme zamanı: %s</string>
   <string name="menu_process">İşlem</string>
   <string name="menu_split">Böl</string>
@@ -138,6 +143,7 @@
   <string name="rx_kotlin_detail">RxJava için Kotlin Uzantıları</string>
   <string name="permission_not_granted">Verilmedi</string>
   <string name="signature_detail">İmza Ayrıntısı</string>
+  <string name="signature_scheme_version">İmza Şeması</string>
   <string name="signature_version">Sürüm</string>
   <string name="signature_serial_number">Seri Numarası</string>
   <string name="signature_issuer">Veren</string>
@@ -181,6 +187,9 @@
   <string name="lib_detail_app_install_source_shizuku_not_running_detail">Başlatmak için Shizuku\'ya atlamak için buraya tıklayın</string>
   <string name="lib_detail_app_install_source_shizuku_permission_not_granted">Shizuku yetkilendirilmedi</string>
   <string name="lib_detail_app_install_source_shizuku_permission_not_granted_detail">Yükleme isteyicisi için Shizuku yetkilendirmesi için buraya tıklayın</string>
+  <string name="lib_detail_elf_info">Ayrıntılı Bilgi</string>
+  <string name="lib_detail_dependency_tip">Bağımlılıklar</string>
+  <string name="lib_detail_entry_points_tip">Giriş Noktaları</string>
   <!--  Toast  -->
   <string name="toast_copied_to_clipboard">Panoya kopyalandı</string>
   <string name="toast_not_existing_market">Mevcut bir uygulama mağazası yok</string>
@@ -206,6 +215,8 @@
   <string name="snapshot_preinstalled_app">Önceden yüklenmiş uygulama</string>
   <string name="snapshot_generate_text_report">Metin Raporu Oluştur</string>
   <string name="snapshot_scheme_tip"><![CDATA[İpucu: Artık arka planda şu yolla anlık görüntüler oluşturabilirsiniz:<br><b>%s</b>]]></string>
+  <string name="snapshot_build_id">Yapı Kimliği</string>
+  <string name="snapshot_build_security_patch">Güvenlik Yaması</string>
   <!--  Dialog  -->
   <string name="dialog_title_reload_apps">Tüm uygulamaları yeniden yüklemek istediğinizden emin misiniz?</string>
   <string name="dialog_subtitle_reload_apps">Bu işlem birkaç saniye sürebilir</string>
@@ -275,4 +286,5 @@
   <string name="snapshot_menu_show_update_time">Güncelleme Zamanını Göster</string>
   <string name="snapshot_menu_hide_no_component_changes">Bileşen Değişikliği Olmayanları Gizle</string>
   <string name="snapshot_menu_diff_highlight">Fark Vurgusu</string>
+  <string name="snapshot_menu_use_iec_units">IEC Birimlerini Kullan</string>
 </resources>

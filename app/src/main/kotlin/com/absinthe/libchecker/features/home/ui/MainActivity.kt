@@ -5,12 +5,15 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import android.view.Menu
 import android.view.View
 import androidx.activity.viewModels
+import androidx.appcompat.widget.SearchView
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.MenuProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.get
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -37,6 +40,7 @@ import com.absinthe.libchecker.services.WorkerService
 import com.absinthe.libchecker.ui.base.BaseActivity
 import com.absinthe.libchecker.ui.base.IAppBarContainer
 import com.absinthe.libchecker.utils.LCAppUtils
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.extensions.addBackStateHandler
 import com.absinthe.libchecker.utils.extensions.doOnMainThreadIdle
 import com.absinthe.libchecker.utils.extensions.isKeyboardShowing
@@ -45,8 +49,6 @@ import com.absinthe.rulesbundle.LCRules
 import com.google.android.material.behavior.HideBottomViewOnScrollBehavior
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.navigation.NavigationBarView
-import com.microsoft.appcenter.analytics.Analytics
-import com.microsoft.appcenter.analytics.EventProperties
 import jonathanfinerty.once.Once
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -127,6 +129,32 @@ class MainActivity :
     unbindService(workerServiceConnection)
   }
 
+  override fun onPause() {
+    super.onPause()
+    saveToolbarMenuState()
+  }
+
+  private fun saveToolbarMenuState() {
+    if (!isBindingInitialized()) {
+      return
+    }
+    if (binding.toolbar.hasExpandedActionView()) {
+      binding.toolbar.menu?.findItem(R.id.search)?.let { searchItem ->
+        val searchView = searchItem.actionView as? SearchView
+        searchView?.let {
+          if (searchItem.isActionViewExpanded) {
+            appViewModel.isSearchMenuExpanded = true
+            it.query?.toString()?.let { query ->
+              appViewModel.currentSearchQuery = query
+            }
+          }
+        }
+      }
+    } else {
+      appViewModel.isSearchMenuExpanded = false
+    }
+  }
+
   override fun addMenuProvider(provider: MenuProvider) {
     if (_menuProviders.contains(provider)) {
       super.removeMenuProvider(provider)
@@ -158,7 +186,6 @@ class MainActivity :
   }
 
   override fun showNavigationView() {
-    Timber.d("showNavigationView")
     // NavigationRailView 不需要隐藏，所以不需要显示
     if (binding.navView is BottomNavigationView) {
       navViewBehavior.slideUp(binding.navView as BottomNavigationView)
@@ -166,7 +193,6 @@ class MainActivity :
   }
 
   override fun hideNavigationView() {
-    Timber.d("hideNavigationView")
     // NavigationRailView 不需要隐藏
     if (binding.navView is BottomNavigationView) {
       navViewBehavior.slideDown(binding.navView as BottomNavigationView)
@@ -219,7 +245,8 @@ class MainActivity :
         registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
           override fun onPageSelected(position: Int) {
             super.onPageSelected(position)
-            navView.menu.getItem(position).isChecked = true
+            navView.menu[position].isChecked = true
+            appViewModel.clearMenuState()
           }
         })
 
@@ -311,9 +338,9 @@ class MainActivity :
       Constants.ACTION_SNAPSHOT -> binding.viewpager.setCurrentItem(2, false)
       Intent.ACTION_APPLICATION_PREFERENCES -> binding.viewpager.setCurrentItem(3, false)
     }
-    Analytics.trackEvent(
+    Telemetry.recordEvent(
       Constants.Event.LAUNCH_ACTION,
-      EventProperties().set("Action", intent.action)
+      mapOf(Telemetry.Param.VALUE to intent.action.toString())
     )
   }
 
@@ -359,6 +386,33 @@ class MainActivity :
       withContext(Dispatchers.Main) {
         Timber.d("initFeatures")
         appViewModel.workerBinder?.initFeatures()
+      }
+    }
+  }
+
+  override fun onPrepareOptionsMenu(menu: Menu?): Boolean {
+    val result = super.onPrepareOptionsMenu(menu)
+    restoreToolbarMenuState()
+    return result
+  }
+
+  private fun restoreToolbarMenuState() {
+    if (!isBindingInitialized()) {
+      return
+    }
+    // Only restore state if menu exists and has search item
+    binding.toolbar.post {
+      val searchItem = binding.toolbar.menu?.findItem(R.id.search)
+      if (appViewModel.isSearchMenuExpanded) {
+        val searchView = searchItem?.actionView as? SearchView
+        searchView?.let {
+          if (!searchItem.isActionViewExpanded) {
+            searchItem.expandActionView()
+            if (appViewModel.currentSearchQuery.isNotEmpty()) {
+              it.setQuery(appViewModel.currentSearchQuery, false)
+            }
+          }
+        }
       }
     }
   }

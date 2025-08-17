@@ -2,11 +2,10 @@ import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.internal.dsl.BaseAppModuleExtension
 import java.io.File
-import java.time.Instant
 import org.gradle.api.Project
 
-const val baseVersionName = "2.5.1"
-val Project.verName: String get() = "${baseVersionName}${versionNameSuffix}.${exec("git rev-parse --short HEAD")}"
+const val baseVersionName = "2.5.2"
+val Project.verName: String get() = "${baseVersionName}${versionNameSuffix}.${exec("git rev-parse --short=7 HEAD")}"
 val Project.verCode: Int get() = exec("git rev-list --count HEAD").toInt()
 val Project.isDevVersion: Boolean get() = exec("git tag -l $baseVersionName").isEmpty()
 val Project.versionNameSuffix: String get() = if (isDevVersion) ".dev" else ""
@@ -20,20 +19,26 @@ fun Project.setupAppModule(block: BaseAppModuleExtension.() -> Unit = {}) {
     defaultConfig {
       versionCode = verCode
       versionName = verName
-      resourceConfigurations += arrayOf(
-        "en",
-        "zh-rCN",
-        "zh-rTW",
-        "zh-rHK",
-        "ru-rRU",
-        "ru-rUA",
-        "ja-rJP",
-        "vi-rVN",
-        "in-rID",
-        "pt-rBR",
-        "ar-rSA",
-        "tr-rTR",
-      )
+      androidResources {
+        ignoreAssetsPatterns += "!PublicSuffixDatabase.list" // OkHttp5
+        generateLocaleConfig = true
+        localeFilters += mutableSetOf(
+          "en",
+          "ar-rSA",
+          "de-rDE",
+          "in-rID",
+          "iw-rIL",
+          "ja-rJP",
+          "pt-rBR",
+          "ru-rRU",
+          "tr-rTR",
+          "uk-rUA",
+          "vi-rVN",
+          "zh-rCN",
+          "zh-rTW",
+          "zh-rHK",
+        )
+      }
     }
     val releaseSigning = if (project.hasProperty("releaseStoreFile")) {
       signingConfigs.create("release") {
@@ -60,11 +65,6 @@ fun Project.setupAppModule(block: BaseAppModuleExtension.() -> Unit = {}) {
       all {
         signingConfig = releaseSigning
         buildConfigField("Boolean", "IS_DEV_VERSION", isDevVersion.toString())
-        buildConfigField(
-          "String",
-          "APP_CENTER_SECRET",
-          "\"" + System.getenv("APP_CENTER_SECRET").orEmpty() + "\""
-        )
         //buildConfigField("String", "BUILD_TIME", "\"" + Instant.now().toString() + "\"")
       }
     }
@@ -75,10 +75,10 @@ fun Project.setupAppModule(block: BaseAppModuleExtension.() -> Unit = {}) {
 
 private inline fun <reified T : BaseExtension> Project.setupBaseModule(crossinline block: T.() -> Unit = {}) {
   extensions.configure<BaseExtension>("android") {
-    compileSdkVersion(35)
+    compileSdkVersion(36)
     defaultConfig {
       minSdk = 24
-      targetSdk = 35
+      targetSdk = 36
     }
     sourceSets.configureEach {
       java.srcDirs("src/$name/kotlin")

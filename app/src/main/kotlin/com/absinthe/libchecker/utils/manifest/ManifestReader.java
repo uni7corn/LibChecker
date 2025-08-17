@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Map;
 
+import pxb.android.Res_value;
 import pxb.android.axml.AxmlReader;
 import pxb.android.axml.AxmlVisitor;
 import pxb.android.axml.NodeVisitor;
@@ -52,7 +53,7 @@ public class ManifestReader {
       }
       return bos.toByteArray();
     } catch (Exception e) {
-      e.printStackTrace();
+      Timber.w(e);
     }
     return null;
   }
@@ -87,16 +88,20 @@ public class ManifestReader {
     }
 
     @Override
-    public void attr(String ns, String name, int resourceId, int type, Object obj) {
+    public void attr(String ns, String name, int resourceId, String raw, Res_value value) {
       if (contains(name)) {
         this.name = name;
-        value = obj;
+        if (value.type == Res_value.TYPE_REFERENCE) {
+          this.value = value.data;
+        } else {
+          this.value = value.toString();
+        }
 
-        if (name != null && value != null) {
-          properties.put(name, value);
+        if (name != null && value.type != Res_value.TYPE_NULL) {
+          properties.put(name, this.value);
         }
       }
-      super.attr(ns, name, resourceId, type, obj);
+      super.attr(ns, name, resourceId, raw, value);
     }
 
     @Override
@@ -116,16 +121,20 @@ public class ManifestReader {
       }
 
       @Override
-      public void attr(String ns, String name, int resourceId, int type, Object obj) {
+      public void attr(String ns, String name, int resourceId, String raw, Res_value value) {
         if (contains(name)) {
           this.name = name;
-          value = obj;
+          if (value.type == Res_value.TYPE_REFERENCE) {
+            this.value = value.data;
+          } else {
+            this.value = value.toString();
+          }
 
-          if (name != null && value != null) {
-            properties.put(name, value);
+          if (name != null && value.type != Res_value.TYPE_NULL) {
+            properties.put(name, this.value);
           }
         }
-        super.attr(ns, name, resourceId, type, obj);
+        super.attr(ns, name, resourceId, raw, value);
       }
 
       @Override
@@ -146,12 +155,16 @@ public class ManifestReader {
       }
 
       @Override
-      public void attr(String ns, String name, int resourceId, int type, Object obj) {
+      public void attr(String ns, String name, int resourceId, String raw, Res_value value) {
         if (contains(name)) {
           this.name = name;
-          value = obj;
+          if (value.type == Res_value.TYPE_REFERENCE) {
+            this.value = value.data;
+          } else {
+            this.value = value.toString();
+          }
         }
-        super.attr(ns, name, resourceId, type, obj);
+        super.attr(ns, name, resourceId, raw, value);
       }
 
       @Override
@@ -172,12 +185,16 @@ public class ManifestReader {
       }
 
       @Override
-      public void attr(String ns, String name, int resourceId, int type, Object obj) {
+      public void attr(String ns, String name, int resourceId, String raw, Res_value value) {
         if (contains(name)) {
           this.name = name;
-          value = obj;
+          if (value.type == Res_value.TYPE_REFERENCE) {
+            this.value = value.data;
+          } else {
+            this.value = value.toString();
+          }
         }
-        super.attr(ns, name, resourceId, type, obj);
+        super.attr(ns, name, resourceId, raw, value);
       }
 
       @Override

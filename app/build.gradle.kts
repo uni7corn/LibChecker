@@ -1,4 +1,5 @@
 import com.android.build.gradle.internal.api.ApkVariantOutputImpl
+import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
 
 plugins {
   alias(libs.plugins.android.application)
@@ -10,6 +11,8 @@ plugins {
   alias(libs.plugins.moshiX)
   alias(libs.plugins.aboutlibraries)
   id("res-opt") apply false
+  id(libs.plugins.gms.get().pluginId)
+  id(libs.plugins.firebase.crashlytics.get().pluginId)
 }
 
 ksp {
@@ -25,14 +28,19 @@ setupAppModule {
   defaultConfig {
     applicationId = "com.absinthe.libchecker"
   }
-  androidResources {
-    generateLocaleConfig = true
-  }
 
   buildFeatures {
     aidl = true
     buildConfig = true
     viewBinding = true
+  }
+
+  buildTypes {
+    debug {
+      configure<CrashlyticsExtension> {
+        mappingFileUploadEnabled = false
+      }
+    }
   }
 
   productFlavors {
@@ -41,12 +49,21 @@ setupAppModule {
     create("foss") {
       isDefault = true
       dimension = flavorDimensionList[0]
+      configure<CrashlyticsExtension> {
+        mappingFileUploadEnabled = false
+      }
     }
     create("market") {
       dimension = flavorDimensionList[0]
     }
     all {
       manifestPlaceholders["channel"] = this.name
+    }
+  }
+
+  packaging {
+    jniLibs {
+      excludes += "lib/**/libdatastore_shared_counter.so" // Jetpack DataStore
     }
   }
 
@@ -61,7 +78,7 @@ setupAppModule {
   )
 
   lint {
-    disable += "AppCompatResource"
+    disable += setOf("AppCompatResource", "MissingTranslation")
   }
 
   dependenciesInfo.includeInApk = false
@@ -85,6 +102,7 @@ dependencies {
 
   implementation(libs.kotlinX.coroutines)
   // implementation(libs.androidX.appCompat)
+  implementation(libs.android.apksig)
   implementation(libs.androidX.core)
   implementation(libs.androidX.activity)
   implementation(libs.androidX.fragment)
@@ -133,7 +151,10 @@ dependencies {
 
   debugImplementation(libs.square.leakCanary)
   "marketCompileOnly"(fileTree("ohos"))
-  "marketImplementation"(libs.bundles.appCenter)
+  "marketImplementation"(platform(libs.firebase.bom))
+  "marketImplementation"(libs.bundles.firebase) {
+    exclude(group = "com.google.android.gms", module = "play-services-ads-identifier")
+  }
 }
 
 protobuf {

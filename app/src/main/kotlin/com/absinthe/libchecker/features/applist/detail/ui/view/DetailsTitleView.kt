@@ -13,8 +13,10 @@ import androidx.core.view.marginStart
 import androidx.core.view.marginTop
 import com.absinthe.libchecker.R
 import com.absinthe.libchecker.constant.Constants
+import com.absinthe.libchecker.constant.GlobalValues
+import com.absinthe.libchecker.constant.options.AdvancedOptions
 import com.absinthe.libchecker.features.applist.detail.ui.adapter.node.AbiLabelNode
-import com.absinthe.libchecker.utils.extensions.getColor
+import com.absinthe.libchecker.utils.PackageUtils
 import com.absinthe.libchecker.utils.extensions.getColorByAttr
 import com.absinthe.libchecker.utils.extensions.getDimensionPixelSize
 import com.absinthe.libchecker.view.AViewGroup
@@ -73,7 +75,7 @@ class DetailsTitleView(
       ViewGroup.LayoutParams.WRAP_CONTENT,
       ViewGroup.LayoutParams.WRAP_CONTENT
     )
-    setTextColor(android.R.color.darker_gray.getColor(context))
+    setTextColor(context.getColorByAttr(com.google.android.material.R.attr.colorOnSurfaceVariant))
     setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
     addView(this)
   }
@@ -88,12 +90,13 @@ class DetailsTitleView(
       ViewGroup.LayoutParams.WRAP_CONTENT,
       ViewGroup.LayoutParams.WRAP_CONTENT
     )
-    setTextColor(android.R.color.darker_gray.getColor(context))
+    setTextColor(context.getColorByAttr(com.google.android.material.R.attr.colorOnSurfaceVariant))
     setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
     addView(this)
   }
 
   fun setAbiLabels(abis: List<AbiLabelNode>) {
+    abiLabelsFlexLayout.removeAllViews()
     abis.forEach {
       val res = when (it.abi) {
         Constants.ARMV8 -> R.drawable.ic_abi_label_arm64_v8a
@@ -116,6 +119,16 @@ class DetailsTitleView(
         v.scaleType = ImageView.ScaleType.CENTER_CROP
         v.setImageResource(res)
         v.alpha = if (it.active) 1f else 0.5f
+        it.action?.let { action ->
+          v.setOnClickListener { action.invoke() }
+        }
+        if ((GlobalValues.advancedOptions and AdvancedOptions.TINT_ABI_LABEL) > 0) {
+          if (PackageUtils.isAbi64Bit(it.abi)) {
+            v.drawable.setTint(context.getColorByAttr(com.google.android.material.R.attr.colorPrimary))
+          } else {
+            v.drawable.setTint(context.getColorByAttr(com.google.android.material.R.attr.colorTertiary))
+          }
+        }
       }
       abiLabelsFlexLayout.addView(view)
     }

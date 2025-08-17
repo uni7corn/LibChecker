@@ -15,6 +15,8 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import androidx.viewbinding.ViewBinding
 import com.absinthe.libchecker.R
+import com.absinthe.libchecker.annotation.ACTION
+import com.absinthe.libchecker.annotation.ACTION_IN_RULES
 import com.absinthe.libchecker.annotation.ACTIVITY
 import com.absinthe.libchecker.annotation.NATIVE
 import com.absinthe.libchecker.annotation.PERMISSION
@@ -27,6 +29,7 @@ import com.absinthe.libchecker.features.applist.Referable
 import com.absinthe.libchecker.features.applist.Sortable
 import com.absinthe.libchecker.features.applist.detail.DetailViewModel
 import com.absinthe.libchecker.features.applist.detail.IDetailContainer
+import com.absinthe.libchecker.features.applist.detail.ui.ELFDetailDialogFragment
 import com.absinthe.libchecker.features.applist.detail.ui.EXTRA_PACKAGE_NAME
 import com.absinthe.libchecker.features.applist.detail.ui.LibDetailDialogFragment
 import com.absinthe.libchecker.features.applist.detail.ui.PermissionDetailDialogFragment
@@ -44,12 +47,12 @@ import com.absinthe.libchecker.ui.base.BaseAlertDialogBuilder
 import com.absinthe.libchecker.ui.base.BaseFragment
 import com.absinthe.libchecker.utils.extensions.addPaddingTop
 import com.absinthe.libchecker.utils.extensions.dp
+import com.absinthe.libchecker.utils.extensions.getColor
 import com.absinthe.libchecker.utils.extensions.launchLibReferencePage
 import com.absinthe.libchecker.utils.extensions.reverseStrikeThroughAnimation
 import com.absinthe.libchecker.utils.extensions.startStrikeThroughAnimation
 import com.absinthe.libchecker.utils.extensions.unsafeLazy
 import com.absinthe.libraries.utils.utils.AntiShakeUtils
-import com.absinthe.rulesbundle.LCRules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -85,14 +88,14 @@ abstract class BaseDetailFragment<T : ViewBinding> :
       text.text = getString(R.string.loading)
     }
   }
-  protected val dividerItemDecoration by lazy {
+  private val dividerItemDecoration by lazy {
     DividerItemDecoration(
       requireContext(),
       DividerItemDecoration.VERTICAL
     )
   }
   protected var isListReady = false
-  protected var afterListReadyTask: Runnable? = null
+  private var afterListReadyTask: Runnable? = null
   private var integrationMonkeyKingBlockList: List<ShareCmpInfo.Component>? = null
   private var integrationBlockerList: List<ShareCmpInfo.Component>? = null
 
@@ -150,15 +153,19 @@ abstract class BaseDetailFragment<T : ViewBinding> :
   override fun onVisibilityChanged(visible: Boolean) {
     super.onVisibilityChanged(visible)
     if (visible) {
-      if (this is ComponentsAnalysisFragment && viewModel.processesMap.isNotEmpty()) {
-        viewModel.updateProcessToolIconVisibility(isComponentFragment())
+      val processMap = if (isComponentFragment()) {
+        viewModel.processesMap
+      } else if (isNativeSourceAvailable()) {
+        viewModel.nativeSourceMap
+      } else if (hasNonGrantedPermissions()) {
+        val label = requireContext().getString(R.string.permission_not_granted)
+        val color = R.color.material_red_400.getColor(requireContext())
+        mapOf(label to color)
       } else {
-        if (this is NativeAnalysisFragment && viewModel.nativeSourceMap.isNotEmpty()) {
-          viewModel.updateProcessToolIconVisibility(true)
-        } else {
-          viewModel.updateProcessToolIconVisibility(false)
-        }
+        emptyMap()
       }
+      viewModel.updateProcessMap(processMap)
+      viewModel.updateProcessToolIconVisibility(processMap.isNotEmpty() && !hasNonGrantedPermissions())
     }
   }
 
@@ -193,7 +200,7 @@ abstract class BaseDetailFragment<T : ViewBinding> :
     }
   }
 
-  fun sortedList(origin: MutableList<LibStringItemChip>): MutableList<LibStringItemChip> {
+  private fun sortedList(origin: MutableList<LibStringItemChip>): MutableList<LibStringItemChip> {
     if (GlobalValues.libSortMode == MODE_SORT_BY_LIB) {
       if (type == NATIVE) {
         origin.sortByDescending { it.item.size }
@@ -288,20 +295,21 @@ abstract class BaseDetailFragment<T : ViewBinding> :
       return
     }
     val item = adapter.getItem(position)
-    val name = item.item.name
     val isValidLib = item.rule != null
 
     if (adapter.type == PERMISSION) {
-      PermissionDetailDialogFragment.newInstance(name)
+      PermissionDetailDialogFragment.newInstance(item.item.name)
         .show(childFragmentManager, PermissionDetailDialogFragment::class.java.name)
       return
     }
 
     lifecycleScope.launch(Dispatchers.IO) {
-      val regexName = LCRules.getRule(name, adapter.type, true)?.regexName
+      val name = item.rule?.libName ?: item.item.name
+      val regexName = item.rule?.regexName
+      val libType = if (item.rule?.libType == ACTION_IN_RULES) ACTION else adapter.type
 
       withContext(Dispatchers.Main) {
-        LibDetailDialogFragment.newInstance(name, adapter.type, regexName, isValidLib)
+        LibDetailDialogFragment.newInstance(name, libType, regexName, isValidLib)
           .show(childFragmentManager, LibDetailDialogFragment::class.java.name)
       }
     }
@@ -315,38 +323,54 @@ abstract class BaseDetailFragment<T : ViewBinding> :
     return type == NATIVE && viewModel.nativeSourceMap.isNotEmpty()
   }
 
-  protected fun hasNonGrantedPermissions(): Boolean {
+  fun hasNonGrantedPermissions(): Boolean {
     return type == PERMISSION && viewModel.permissionsItems.value?.any { it.item.size == 0L } == true
   }
 
   private fun doOnLongClick(context: Context, item: LibStringItemChip, position: Int) {
-    if (!viewModel.isApk && this is Referable) {
-      val actionMap = mutableMapOf<Int, () -> Unit>()
-      val arrayAdapter = ArrayAdapter<String>(context, android.R.layout.simple_list_item_1)
-      val componentName = item.item.name
-      val fullComponentName = if (componentName.startsWith(".")) {
-        viewModel.packageInfo.packageName + componentName
+    val actionMap = mutableMapOf<Int, () -> Unit>()
+    val arrayAdapter = ArrayAdapter<String>(context, android.R.layout.simple_list_item_1)
+    val componentName = item.item.name
+    val fullComponentName = if (componentName.startsWith(".")) {
+      viewModel.packageInfo.packageName + componentName
+    } else {
+      componentName
+    }
+
+    // Copy
+    arrayAdapter.add(getString(android.R.string.copy))
+    actionMap[arrayAdapter.count - 1] = {
+      if (this is MetaDataAnalysisFragment) {
+        ClipboardUtils.put(context, componentName + ": " + item.item.source)
       } else {
-        componentName
+        ClipboardUtils.put(context, componentName)
       }
+      VersionCompat.showCopiedOnClipboardToast(context)
+    }
 
-      // Copy
-      arrayAdapter.add(getString(android.R.string.copy))
+    // ELF info
+    if (this is NativeAnalysisFragment) {
+      arrayAdapter.add(getString(R.string.lib_detail_elf_info))
       actionMap[arrayAdapter.count - 1] = {
-        if (this is MetaDataAnalysisFragment) {
-          ClipboardUtils.put(context, componentName + ": " + item.item.source)
-        } else {
-          ClipboardUtils.put(context, componentName)
-        }
-        VersionCompat.showCopiedOnClipboardToast(context)
+        ELFDetailDialogFragment.newInstance(
+          packageName = packageName,
+          elfPath = item.item.source.orEmpty(),
+          ruleIcon = item.rule?.iconRes ?: com.absinthe.lc.rulesbundle.R.drawable.ic_sdk_placeholder
+        ).show(childFragmentManager, ELFDetailDialogFragment::class.java.name)
       }
+    }
 
-      // Reference
+    // Reference
+    if (this is Referable) {
       arrayAdapter.add(getString(R.string.tab_lib_reference_statistics))
       actionMap[arrayAdapter.count - 1] = {
-        activity?.launchLibReferencePage(componentName, item.rule?.label, type, null)
+        val refName = item.rule?.libName ?: componentName
+        val libType = if (item.rule?.libType == ACTION_IN_RULES) ACTION else type
+        activity?.launchLibReferencePage(refName, item.rule?.label, libType, null)
       }
+    }
 
+    if (!viewModel.isApk) {
       // Blocker
       if (this is ComponentsAnalysisFragment && BlockerManager.isSupportInteraction) {
         if (integrationBlockerList == null) {
@@ -421,13 +445,13 @@ abstract class BaseDetailFragment<T : ViewBinding> :
           )
         }
       }
-
-      BaseAlertDialogBuilder(context)
-        .setAdapter(arrayAdapter) { _, which ->
-          actionMap[which]?.invoke()
-        }
-        .show()
     }
+
+    BaseAlertDialogBuilder(context)
+      .setAdapter(arrayAdapter) { _, which ->
+        actionMap[which]?.invoke()
+      }
+      .show()
   }
 
   private fun animateTvTitle(position: Int, shouldTurnToDisable: Boolean) {

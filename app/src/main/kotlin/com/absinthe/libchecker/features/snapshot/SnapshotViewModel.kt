@@ -759,11 +759,12 @@ class SnapshotViewModel : ViewModel() {
   }
 
   private suspend fun updateTopApps(timestamp: Long, list: List<SnapshotDiffItem>) {
+    val systemProps = repository.getTimeStamp(timestamp)?.systemProps
     val appsList = list.asSequence()
       .map { it.packageName }
       .filter { PackageUtils.isAppInstalled(it) }
       .toList()
-    repository.updateTimeStampItem(TimeStampItem(timestamp, appsList.toJson()))
+    repository.updateTimeStampItem(TimeStampItem(timestamp, appsList.toJson(), systemProps))
   }
 
   fun computeDiffDetail(context: Context, entity: SnapshotDiffItem) = viewModelScope.launch(Dispatchers.IO) {
@@ -832,7 +833,7 @@ class SnapshotViewModel : ViewModel() {
     if (timestamp == 0L) {
       return@launch
     }
-    repository.insert(TimeStampItem(timestamp, null))
+    repository.insert(TimeStampItem(timestamp, null, null))
   }
 
   private fun getNativeDiffList(
@@ -878,7 +879,7 @@ class SnapshotViewModel : ViewModel() {
         SnapshotDetailItem(
           item.name,
           item.name,
-          PackageUtils.sizeToString(context, item, false),
+          PackageUtils.sizeToString(context, item),
           REMOVED,
           NATIVE
         )
@@ -889,7 +890,7 @@ class SnapshotViewModel : ViewModel() {
         SnapshotDetailItem(
           item.name,
           item.name,
-          PackageUtils.sizeToString(context, item, false),
+          PackageUtils.sizeToString(context, item),
           ADDED,
           NATIVE
         )
@@ -1300,8 +1301,8 @@ class SnapshotViewModel : ViewModel() {
         val message = buildString {
           timeStampMap.forEach {
             append(
-              String.format(
-                context.getString(R.string.album_restore_detail),
+              context.getString(
+                R.string.album_restore_detail,
                 getFormatDateString(it.key),
                 it.value.toString()
               )

@@ -15,9 +15,9 @@ import androidx.core.view.marginStart
 import com.absinthe.libchecker.R
 import com.absinthe.libchecker.features.snapshot.detail.bean.SnapshotDiffItem
 import com.absinthe.libchecker.utils.LCAppUtils
-import com.absinthe.libchecker.utils.extensions.getColor
 import com.absinthe.libchecker.utils.extensions.getColorByAttr
 import com.absinthe.libchecker.utils.extensions.getDimensionPixelSize
+import com.absinthe.libchecker.utils.extensions.setLongClickCopiedToClipboard
 import com.absinthe.libchecker.utils.extensions.sizeToString
 import com.absinthe.libchecker.view.AViewGroup
 import com.absinthe.libchecker.view.app.AlwaysMarqueeTextView
@@ -72,7 +72,7 @@ class SnapshotTitleView(
       ViewGroup.LayoutParams.WRAP_CONTENT,
       ViewGroup.LayoutParams.WRAP_CONTENT
     )
-    setTextColor(android.R.color.darker_gray.getColor(context))
+    setTextColor(context.getColorByAttr(com.google.android.material.R.attr.colorOnSurfaceVariant))
     setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
     addView(this)
   }
@@ -87,7 +87,7 @@ class SnapshotTitleView(
       ViewGroup.LayoutParams.WRAP_CONTENT,
       ViewGroup.LayoutParams.WRAP_CONTENT
     )
-    setTextColor(android.R.color.darker_gray.getColor(context))
+    setTextColor(context.getColorByAttr(com.google.android.material.R.attr.colorOnSurfaceVariant))
     setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
     addView(this)
   }
@@ -102,7 +102,7 @@ class SnapshotTitleView(
       ViewGroup.LayoutParams.WRAP_CONTENT,
       ViewGroup.LayoutParams.WRAP_CONTENT
     )
-    setTextColor(android.R.color.darker_gray.getColor(context))
+    setTextColor(context.getColorByAttr(com.google.android.material.R.attr.colorOnSurfaceVariant))
     setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
     addView(this)
   }
@@ -126,7 +126,10 @@ class SnapshotTitleView(
           sizeDiffAppend.append(", $diffSizeText")
         }
       }
-      packageSizeView.text = sizeDiffAppend
+      packageSizeView.apply {
+        text = sizeDiffAppend
+        setLongClickCopiedToClipboard(text)
+      }
     } else {
       packageSizeView.isVisible = false
     }
@@ -136,29 +139,32 @@ class SnapshotTitleView(
     val targetDiff = LCAppUtils.getDiffString(item.targetApiDiff, isNewOrDeleted).takeIf { item.targetApiDiff.old > 0 }
     val minDiff = LCAppUtils.getDiffString(item.minSdkDiff, isNewOrDeleted).takeIf { item.minSdkDiff.old > 0 }
     val compileDiff = LCAppUtils.getDiffString(item.compileSdkDiff, isNewOrDeleted).takeIf { item.compileSdkDiff.old > 0 }
-    apisView.text = buildSpannedString {
-      targetDiff?.let {
-        scale(1f) {
-          append("Target: ")
+    apisView.apply {
+      text = buildSpannedString {
+        targetDiff?.let {
+          scale(1f) {
+            append("Target: ")
+          }
+          append(it)
+          append("  ")
         }
-        append(it)
-        append("  ")
-      }
 
-      minDiff?.let {
-        scale(1f) {
-          append("Min: ")
+        minDiff?.let {
+          scale(1f) {
+            append("Min: ")
+          }
+          append(it)
+          append("  ")
         }
-        append(it)
-        append("  ")
-      }
 
-      compileDiff?.let {
-        scale(1f) {
-          append("Compile: ")
+        compileDiff?.let {
+          scale(1f) {
+            append("Compile: ")
+          }
+          append(it)
         }
-        append(it)
       }
+      setLongClickCopiedToClipboard(text)
     }
   }
 

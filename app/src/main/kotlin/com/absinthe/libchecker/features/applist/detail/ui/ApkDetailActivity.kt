@@ -1,5 +1,6 @@
 package com.absinthe.libchecker.features.applist.detail.ui
 
+import android.app.ComponentCaller
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -14,8 +15,9 @@ import com.absinthe.libchecker.compat.PackageManagerCompat
 import com.absinthe.libchecker.constant.Constants
 import com.absinthe.libchecker.features.applist.detail.IDetailContainer
 import com.absinthe.libchecker.utils.UiUtils
+import com.absinthe.libchecker.utils.apk.APKSParser
+import com.absinthe.libchecker.utils.apk.XAPKParser
 import com.absinthe.libchecker.utils.showToast
-import com.absinthe.libchecker.utils.xapk.XAPKParser
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -41,8 +43,9 @@ class ApkDetailActivity :
     resolveIntent(intent)
   }
 
-  override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
+  override fun onNewIntent(intent: Intent, caller: ComponentCaller) {
+    super.onNewIntent(intent, caller)
+    Timber.d("onNewIntent: $intent")
     resolveIntent(intent)
   }
 
@@ -82,6 +85,7 @@ class ApkDetailActivity :
 
     lifecycleScope.launch(Dispatchers.IO) {
       tempFile = File(externalCacheDir, Constants.TEMP_PACKAGE).also { tf ->
+        if (tf.exists()) tf.delete()
         val inputStream = runCatching { contentResolver.openInputStream(uri) }.getOrNull() ?: run {
           dialog.dismiss()
           showToast(R.string.toast_use_another_file_manager)
@@ -122,16 +126,26 @@ class ApkDetailActivity :
                 dialog.dismiss()
               } ?: run {
                 Timber.w("Failed to get PackageArchiveInfo")
-                runCatching {
+
+                val result = runCatching {
+                  val pi = initAPKSPackage(tf, flag)
+                  onPackageInfoAvailable(pi, null)
+                  dialog.dismiss()
+                }
+                if (result.isSuccess) return@run
+
+                Timber.w("Not APKS file")
+                val xapkResult = runCatching {
                   val pi = initXAPKPackage(tf, flag)
                   onPackageInfoAvailable(pi, null)
                   dialog.dismiss()
-                }.onFailure { exception ->
-                  Timber.e(exception)
-                  dialog.dismiss()
-                  showToast(R.string.toast_use_another_file_manager)
-                  finish()
                 }
+                if (xapkResult.isSuccess) return@run
+
+                Timber.w(xapkResult.exceptionOrNull(), "Failed to parse package")
+                dialog.dismiss()
+                showToast(R.string.toast_use_another_file_manager)
+                finish()
               }
             }
           } else {
@@ -146,6 +160,11 @@ class ApkDetailActivity :
 
   private fun initXAPKPackage(file: File, flags: Int): PackageInfo {
     val parser = XAPKParser(file, flags)
+    return parser.getPackageInfo() ?: throw PackageParserException()
+  }
+
+  private fun initAPKSPackage(file: File, flags: Int): PackageInfo {
+    val parser = APKSParser(file, flags)
     return parser.getPackageInfo() ?: throw PackageParserException()
   }
 }

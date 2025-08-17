@@ -1,7 +1,7 @@
 package com.absinthe.libchecker.features.chart.impl
 
 import android.content.Context
-import android.graphics.Color
+import androidx.core.graphics.toColorInt
 import com.absinthe.libchecker.R
 import com.absinthe.libchecker.database.entity.Features
 import com.absinthe.libchecker.database.entity.LCItem
@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
 class AABChartDataSource(items: List<LCItem>) : BaseChartDataSource<PieChart>(items) {
   override val classifiedMap: HashMap<Int, ChartSourceItem> = HashMap(2)
 
-  override suspend fun fillChartView(chartView: PieChart) {
+  override suspend fun fillChartView(chartView: PieChart, onProgressUpdated: (Int) -> Unit) {
     withContext(Dispatchers.Default) {
       val context = chartView.context ?: return@withContext
       val parties = listOf(
@@ -68,11 +68,11 @@ class AABChartDataSource(items: List<LCItem>) : BaseChartDataSource<PieChart>(it
 
       // add a lot of colors
       val colors = arrayListOf(
-        Color.parseColor("#4285f4"),
-        Color.parseColor("#3ddc84")
+        "#4285f4".toColorInt(),
+        "#3ddc84".toColorInt()
       )
 
-      dataSet.colors = colors
+      dataSet.setColors(colors)
       // dataSet.setSelectionShift(0f);
       val data = PieData(dataSet).apply {
         setValueFormatter(PercentFormatter())

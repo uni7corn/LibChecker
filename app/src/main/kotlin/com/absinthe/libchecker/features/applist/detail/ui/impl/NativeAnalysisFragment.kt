@@ -1,8 +1,10 @@
 package com.absinthe.libchecker.features.applist.detail.ui.impl
 
+import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.absinthe.libchecker.R
 import com.absinthe.libchecker.annotation.NATIVE
+import com.absinthe.libchecker.constant.Constants.MULTI_ARCH
 import com.absinthe.libchecker.databinding.FragmentLibNativeBinding
 import com.absinthe.libchecker.features.applist.Referable
 import com.absinthe.libchecker.features.applist.detail.ui.EXTRA_PACKAGE_NAME
@@ -10,13 +12,16 @@ import com.absinthe.libchecker.features.applist.detail.ui.adapter.LibStringDiffU
 import com.absinthe.libchecker.features.applist.detail.ui.base.BaseDetailFragment
 import com.absinthe.libchecker.features.applist.detail.ui.base.EXTRA_TYPE
 import com.absinthe.libchecker.features.statistics.bean.LibStringItemChip
+import com.absinthe.libchecker.utils.extensions.ABI_STRING_MAP
 import com.absinthe.libchecker.utils.extensions.putArguments
+import com.google.android.material.tabs.TabLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class NativeAnalysisFragment :
   BaseDetailFragment<FragmentLibNativeBinding>(),
@@ -39,6 +44,14 @@ class NativeAnalysisFragment :
       list.apply {
         adapter = this@NativeAnalysisFragment.adapter
       }
+      tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+        override fun onTabSelected(tab: TabLayout.Tab) {
+          viewModel.loadSoAnalysisData(tab.text.toString())
+        }
+
+        override fun onTabUnselected(tab: TabLayout.Tab?) {}
+        override fun onTabReselected(tab: TabLayout.Tab?) {}
+      })
     }
 
     adapter.apply {
@@ -58,20 +71,30 @@ class NativeAnalysisFragment :
           adapter.set64Bit(it)
         }
       }.launchIn(lifecycleScope)
+      nativeLibTabs.onEach {
+        binding.tabLayout.removeAllTabs()
+        it?.forEach { title ->
+          binding.tabLayout.addTab(binding.tabLayout.newTab().setText(title), false)
+        }
+        binding.tabLayout.isVisible = binding.tabLayout.tabCount > 1
+        lifecycleScope.launch(Dispatchers.IO) {
+          val flow = viewModel.abiBundleStateFlow
+          val abi = (flow.value ?: flow.filterNotNull().first()).abi
+          withContext(Dispatchers.Main) {
+            selectTabByAbi(abi)
+          }
+        }
+      }.launchIn(lifecycleScope)
+      nativeLibItems.onEach {
+        if (it != null) {
+          setItems(it)
+        }
+      }.launchIn(lifecycleScope)
 
       packageInfoStateFlow.value?.run {
         nativeLibItems.value ?: run { initSoAnalysisData() }
       }
     }
-  }
-
-  override fun onVisibilityChanged(visible: Boolean) {
-    if (context != null && visible) {
-      viewModel.updateProcessMap(viewModel.nativeSourceMap)
-    } else {
-      viewModel.updateProcessMap(viewModel.processesMap)
-    }
-    super.onVisibilityChanged(visible)
   }
 
   private fun setItems(list: List<LibStringItemChip>) {
@@ -96,6 +119,15 @@ class NativeAnalysisFragment :
         EXTRA_PACKAGE_NAME to packageName,
         EXTRA_TYPE to NATIVE
       )
+    }
+  }
+
+  private fun selectTabByAbi(abi: Int) {
+    (0..binding.tabLayout.tabCount).forEach {
+      val tab = binding.tabLayout.getTabAt(it)
+      if (tab?.text == ABI_STRING_MAP[abi % MULTI_ARCH]) {
+        tab?.select()
+      }
     }
   }
 }

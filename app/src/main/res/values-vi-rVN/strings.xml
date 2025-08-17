@@ -81,7 +81,7 @@
   <string name="reload_apps_summary">Hãy thử khi danh sách ứng dụng được hiển thị bất thường</string>
   <string name="help_docs_summary">Tìm hiểu cách sử dụng LibChecker</string>
   <string name="join_telegram_group_summary">Tham gia nhóm Telegram của chúng tôi</string>
-  <string name="anonymous_statistics_summary">Chúng tôi sử dụng Microsoft AppCenter để gửi ẩn danh các thư viện được đánh dấu được sử dụng phổ biến nhất và một số dữ liệu về thói quen sử dụng để làm cho LibChecker trở nên thiết thực hơn</string>
+  <string name="anonymous_statistics_summary">Chúng tôi sử dụng Google Firebase để gửi ẩn danh các thư viện được đánh dấu được sử dụng phổ biến nhất và một số dữ liệu về thói quen sử dụng để làm cho LibChecker trở nên thiết thực hơn</string>
   <string name="cloud_rules_summary">Cập nhật nội quy thư viện được đánh dấu mới nhất tại đây</string>
   <string name="array_dark_mode_off">TẮT</string>
   <string name="array_dark_mode_on">MỞ</string>
@@ -152,7 +152,7 @@
   <string name="lib_detail_app_install_source_originating_package">người yêu cầu cài đặt</string>
   <string name="lib_detail_app_install_source_installing_package">Người thực hiện cài đặt</string>
   <string name="lib_detail_app_install_source_empty">không xác định</string>
-  <string name="lib_detail_app_install_source_empty_detail">ADB hoặc ứng dụng đã gỡ cài đặt</string>
+  <string name="lib_detail_app_install_source_empty_detail">Shell hoặc ứng dụng đã gỡ cài đặt</string>
   <string name="lib_detail_app_install_source_shizuku_usage">Vì Android hạn chế API nhận trình yêu cầu cài đặt nên chúng tôi sử dụng Shizuku để nhận trình yêu cầu cài đặt.</string>
   <string name="lib_detail_app_install_source_shizuku_uninstalled">Shizuku chưa được cài đặt</string>
   <string name="lib_detail_app_install_source_shizuku_uninstalled_detail">Nhấn vào đây để cài đặt Shizuku</string>

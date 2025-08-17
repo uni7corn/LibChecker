@@ -4,8 +4,8 @@ import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.RemoteException
 import android.text.TextUtils
 import android.view.LayoutInflater
@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.core.text.HtmlCompat
 import androidx.fragment.app.activityViewModels
@@ -35,6 +36,7 @@ import com.absinthe.libchecker.ui.base.BaseAlertDialogBuilder
 import com.absinthe.libchecker.ui.base.IAppBarContainer
 import com.absinthe.libchecker.ui.base.IListController
 import com.absinthe.libchecker.utils.OsUtils
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.Toasty
 import com.absinthe.libchecker.utils.UiUtils
 import com.absinthe.libchecker.utils.extensions.doOnMainThreadIdle
@@ -43,8 +45,7 @@ import com.absinthe.libraries.utils.extensions.getBoolean
 import com.absinthe.libraries.utils.utils.AntiShakeUtils
 import com.absinthe.rulesbundle.LCRemoteRepo
 import com.absinthe.rulesbundle.LCRules
-import com.microsoft.appcenter.analytics.Analytics
-import com.microsoft.appcenter.analytics.EventProperties
+import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.launch
 import rikka.material.app.LocaleDelegate
@@ -84,20 +85,14 @@ class SettingsFragment :
           Timber.e(e)
           Toasty.showShort(requireContext(), e.toString())
         }
-        Analytics.trackEvent(
-          Constants.Event.SETTINGS,
-          EventProperties().set("PREF_APK_ANALYTICS", newValue)
-        )
+        recordPreferenceEvent(Constants.PREF_APK_ANALYTICS, newValue)
         true
       }
     }
     findPreference<TwoStatePreference>(Constants.PREF_COLORFUL_ICON)?.apply {
       setOnPreferenceChangeListener { pref, newValue ->
         emitPrefChange(pref.key, newValue)
-        Analytics.trackEvent(
-          Constants.Event.SETTINGS,
-          EventProperties().set("PREF_COLORFUL_ICON", newValue as Boolean)
-        )
+        recordPreferenceEvent(Constants.PREF_COLORFUL_ICON, newValue)
         true
       }
     }
@@ -111,10 +106,7 @@ class SettingsFragment :
             LCRemoteRepo.Gitlab
           }
         )
-        Analytics.trackEvent(
-          Constants.Event.SETTINGS,
-          EventProperties().set("PREF_RULES_REPO", newValue)
-        )
+        recordPreferenceEvent(Constants.PREF_RULES_REPO, newValue)
         true
       }
     }
@@ -158,6 +150,7 @@ class SettingsFragment :
             childFragmentManager,
             CloudRulesDialogFragment::class.java.name
           )
+          recordPreferenceEvent(Constants.PREF_CLOUD_RULES)
           true
         }
       }
@@ -185,14 +178,54 @@ class SettingsFragment :
             .setMessage(R.string.dialog_subtitle_reload_apps)
             .setPositiveButton(android.R.string.ok) { _, _ ->
               viewModel.reloadApps()
-              Analytics.trackEvent(
-                Constants.Event.SETTINGS,
-                EventProperties().set("PREF_RELOAD_APPS", "Ok")
-              )
+              recordPreferenceEvent(Constants.PREF_RELOAD_APPS)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .create()
             .show()
+          true
+        }
+      }
+    }
+
+    findPreference<Preference>(Constants.PREF_EXPORT_LOG)?.apply {
+      setOnPreferenceClickListener {
+        if (AntiShakeUtils.isInvalidClick(prefRecyclerView)) {
+          false
+        } else {
+          val logDir = File(requireContext().cacheDir, "logs")
+          if (!logDir.exists() || !logDir.isDirectory) {
+            return@setOnPreferenceClickListener true
+          }
+
+          val latestLogFile = logDir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".log") }
+            ?.maxByOrNull { it.lastModified() }
+
+          if (latestLogFile == null) {
+            return@setOnPreferenceClickListener true
+          }
+
+          Timber.d("Latest log file: ${latestLogFile.absolutePath}")
+          try {
+            val uri = FileProvider.getUriForFile(
+              requireContext(),
+              "${BuildConfig.APPLICATION_ID}.fileprovider",
+              latestLogFile
+            )
+            val intent = Intent(Intent.ACTION_SEND).apply {
+              type = "text/plain"
+              putExtra(Intent.EXTRA_STREAM, uri)
+              addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, getString(R.string.export_log)))
+          } catch (e: Exception) {
+            Timber.e(e)
+            Toasty.showShort(requireContext(), e.toString())
+          }
+          true
+
+          recordPreferenceEvent(Constants.PREF_EXPORT_LOG)
           true
         }
       }
@@ -214,6 +247,7 @@ class SettingsFragment :
             childFragmentManager,
             GetUpdatesDialogFragment::class.java.name
           )
+          recordPreferenceEvent(Constants.PREF_GET_UPDATES)
           true
         }
       }
@@ -263,13 +297,10 @@ class SettingsFragment :
         try {
           startActivity(
             Intent(Intent.ACTION_VIEW).apply {
-              data = Uri.parse(URLManager.PLAY_STORE_DETAIL_PAGE)
+              data = URLManager.PLAY_STORE_DETAIL_PAGE.toUri()
             }
           )
-          Analytics.trackEvent(
-            Constants.Event.SETTINGS,
-            EventProperties().set("PREF_RATE", "Clicked")
-          )
+          recordPreferenceEvent(Constants.PREF_RATE)
         } catch (e: ActivityNotFoundException) {
           Timber.e(e)
         }
@@ -283,6 +314,7 @@ class SettingsFragment :
             Intent(Intent.ACTION_VIEW, URLManager.TELEGRAM_GROUP.toUri())
               .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
           )
+          recordPreferenceEvent(Constants.PREF_TELEGRAM)
         } catch (e: ActivityNotFoundException) {
           Timber.e(e)
         }
@@ -407,5 +439,12 @@ class SettingsFragment :
     lifecycleScope.launch {
       GlobalValues.preferencesFlow.emit(key to value)
     }
+  }
+
+  private fun recordPreferenceEvent(key: String, value: Any = "") {
+    Telemetry.recordEvent(
+      Constants.Event.SETTINGS,
+      mapOf(Telemetry.Param.CONTENT to key, Telemetry.Param.VALUE to value)
+    )
   }
 }

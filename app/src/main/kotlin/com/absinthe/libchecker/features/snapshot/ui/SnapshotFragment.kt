@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.IBinder
 import android.util.TypedValue
 import android.view.Gravity
@@ -32,7 +33,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
-import com.absinthe.libchecker.LibCheckerApp
 import com.absinthe.libchecker.R
 import com.absinthe.libchecker.constant.Constants
 import com.absinthe.libchecker.constant.GlobalValues
@@ -47,6 +47,7 @@ import com.absinthe.libchecker.features.snapshot.detail.bean.SnapshotDiffItem
 import com.absinthe.libchecker.features.snapshot.detail.ui.EXTRA_ENTITY
 import com.absinthe.libchecker.features.snapshot.detail.ui.SnapshotDetailActivity
 import com.absinthe.libchecker.features.snapshot.detail.ui.view.SnapshotEmptyView
+import com.absinthe.libchecker.features.snapshot.ui.adapter.ARROW
 import com.absinthe.libchecker.features.snapshot.ui.adapter.SnapshotAdapter
 import com.absinthe.libchecker.features.snapshot.ui.adapter.SnapshotDiffUtil
 import com.absinthe.libchecker.features.snapshot.ui.view.SnapshotDashboardView
@@ -59,6 +60,7 @@ import com.absinthe.libchecker.ui.base.BaseAlertDialogBuilder
 import com.absinthe.libchecker.ui.base.BaseListControllerFragment
 import com.absinthe.libchecker.ui.base.IAppBarContainer
 import com.absinthe.libchecker.utils.OsUtils
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.Toasty
 import com.absinthe.libchecker.utils.extensions.addPaddingTop
 import com.absinthe.libchecker.utils.extensions.doOnMainThreadIdle
@@ -66,9 +68,8 @@ import com.absinthe.libchecker.utils.extensions.dp
 import com.absinthe.libchecker.utils.extensions.getDimensionByAttr
 import com.absinthe.libchecker.utils.extensions.setLongClickCopiedToClipboard
 import com.absinthe.libchecker.utils.extensions.setSpaceFooterView
+import com.absinthe.libchecker.utils.fromJson
 import com.absinthe.libraries.utils.utils.AntiShakeUtils
-import com.microsoft.appcenter.analytics.Analytics
-import com.microsoft.appcenter.analytics.EventProperties
 import java.util.Locale
 import java.util.concurrent.LinkedBlockingQueue
 import kotlinx.coroutines.Dispatchers
@@ -309,8 +310,10 @@ class SnapshotFragment :
           currentTimeStamp = it.timestamp
           if (it.timestamp != 0L) {
             dashboard.container.tvSnapshotTimestampText.text = viewModel.getFormatDateString(it.timestamp)
+            updateSystemProps(dashboard, it.timestamp)
           } else {
             dashboard.container.tvSnapshotTimestampText.text = getString(R.string.snapshot_none)
+            dashboard.container.setSystemProps(emptyList())
             viewModel.snapshotDiffItemsFlow.emit(emptyList())
             flip(VF_LIST)
           }
@@ -481,9 +484,9 @@ class SnapshotFragment :
           }
         }
 
-        Analytics.trackEvent(
+        Telemetry.recordEvent(
           Constants.Event.SNAPSHOT_CLICK,
-          EventProperties().set("Action", "Click to Save")
+          mapOf("Action" to "Click to Save")
         )
       }
 
@@ -495,7 +498,7 @@ class SnapshotFragment :
           .appendQueryParameter(LCUris.Bridge.PARAM_ACTION, LCUris.Bridge.ACTION_SHOOT)
           .appendQueryParameter(
             LCUris.Bridge.PARAM_AUTHORITY,
-            LibCheckerApp.generateAuthKey().toString()
+            GlobalValues.generateAuthKey().toString()
           )
           .appendQueryParameter(LCUris.Bridge.PARAM_DROP_PREVIOUS, false.toString())
           .build()
@@ -510,7 +513,7 @@ class SnapshotFragment :
               .toInt()
           it.setPadding(paddingHorizontal, 0, paddingHorizontal, 0)
           it.text =
-            HtmlCompat.fromHtml(String.format(getString(R.string.snapshot_scheme_tip), scheme), 0)
+            HtmlCompat.fromHtml(getString(R.string.snapshot_scheme_tip, scheme), 0)
           it.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
           it.setLongClickCopiedToClipboard(scheme)
         }
@@ -563,7 +566,7 @@ class SnapshotFragment :
   }
 
   private fun flip(child: Int) {
-    if (isDetached) {
+    if (isDetached || !isBindingInitialized()) {
       return
     }
     allowRefreshing = child == VF_LIST
@@ -626,7 +629,7 @@ class SnapshotFragment :
       binding.list.smoothScrollToPosition(0)
     } else {
       flip(VF_LOADING)
-      viewModel.compareDiff(GlobalValues.snapshotTimestamp)
+      viewModel.compareDiff(currentTimeStamp)
     }
   }
 
@@ -672,6 +675,41 @@ class SnapshotFragment :
       if (highlightRefresh) {
         // noinspection NotifyDataSetChanged
         adapter.notifyDataSetChanged()
+      }
+    }
+  }
+
+  private fun updateSystemProps(dashboard: SnapshotDashboardView, timestamp: Long) {
+    lifecycleScope.launch(Dispatchers.IO) {
+      val systemProps = runCatching {
+        viewModel.repository.getTimeStamp(timestamp)?.systemProps?.fromJson<Map<String, String>>()
+      }.getOrNull()
+      if (systemProps.isNullOrEmpty()) {
+        dashboard.container.setSystemProps(emptyList())
+      } else {
+        val displayedSystemProps = mutableListOf<Pair<String, String>>()
+        systemProps[Constants.SystemProps.RO_BUILD_ID]?.let {
+          val currentBuildId = Build.ID
+
+          if (it != currentBuildId) {
+            displayedSystemProps.add(
+              getString(R.string.snapshot_build_id) to "$it $ARROW $currentBuildId"
+            )
+          }
+        }
+        systemProps[Constants.SystemProps.RO_BUILD_VERSION_SECURITY_PATCH]?.let {
+          val currentSecurityPatch = Build.VERSION.SECURITY_PATCH
+
+          if (it != currentSecurityPatch) {
+            displayedSystemProps.add(
+              getString(R.string.snapshot_build_security_patch) to "$it $ARROW $currentSecurityPatch"
+            )
+          }
+        }
+
+        launch(Dispatchers.Main) {
+          dashboard.container.setSystemProps(displayedSystemProps)
+        }
       }
     }
   }

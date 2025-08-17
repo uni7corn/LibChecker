@@ -5,11 +5,12 @@ import android.content.pm.ComponentInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Bundle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.absinthe.libchecker.BuildConfig
 import com.absinthe.libchecker.LibCheckerApp
+import com.absinthe.libchecker.annotation.ACTION
+import com.absinthe.libchecker.annotation.ACTION_IN_RULES
 import com.absinthe.libchecker.annotation.ACTIVITY
 import com.absinthe.libchecker.annotation.DEX
 import com.absinthe.libchecker.annotation.LibType
@@ -28,7 +29,6 @@ import com.absinthe.libchecker.annotation.STATUS_START_REQUEST_CHANGE
 import com.absinthe.libchecker.annotation.STATUS_START_REQUEST_CHANGE_END
 import com.absinthe.libchecker.constant.Constants
 import com.absinthe.libchecker.constant.GlobalValues
-import com.absinthe.libchecker.constant.OnceTag
 import com.absinthe.libchecker.constant.options.LibReferenceOptions
 import com.absinthe.libchecker.data.app.LocalAppDataSource
 import com.absinthe.libchecker.database.Repositories
@@ -38,25 +38,25 @@ import com.absinthe.libchecker.features.statistics.bean.LibReference
 import com.absinthe.libchecker.features.statistics.bean.LibStringItem
 import com.absinthe.libchecker.services.IWorkerService
 import com.absinthe.libchecker.ui.base.IListController
+import com.absinthe.libchecker.utils.IntentFilterUtils
 import com.absinthe.libchecker.utils.LCAppUtils
 import com.absinthe.libchecker.utils.PackageUtils
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.extensions.getAppName
 import com.absinthe.libchecker.utils.extensions.getFeatures
 import com.absinthe.libchecker.utils.extensions.getVersionCode
+import com.absinthe.libchecker.utils.extensions.isArchivedPackage
+import com.absinthe.libchecker.utils.extensions.use
 import com.absinthe.libchecker.utils.harmony.ApplicationDelegate
 import com.absinthe.libchecker.utils.harmony.HarmonyOsUtil
 import com.absinthe.libraries.utils.manager.TimeRecorder
 import com.absinthe.rulesbundle.LCRules
-import com.absinthe.rulesbundle.Rule
-import com.microsoft.appcenter.analytics.Analytics
 import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import jonathanfinerty.once.Once
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -88,6 +88,10 @@ class HomeViewModel : ViewModel() {
   var controller: IListController? = null
   var appListStatus: Int = STATUS_NOT_START
   var workerBinder: IWorkerService? = null
+
+  // Simple menu state management
+  var isSearchMenuExpanded: Boolean = false
+  var currentSearchQuery: String = ""
 
   fun reloadApps() {
     if (appListStatus != STATUS_NOT_START || (initJob?.isActive == false && requestChangeJob?.isActive == false)) {
@@ -270,13 +274,6 @@ class HomeViewModel : ViewModel() {
     timeRecorder.end()
     Timber.d("Request change: END, $timeRecorder")
     updateAppListStatus(STATUS_NOT_START)
-
-    if (!Once.beenDone(Once.THIS_APP_VERSION, OnceTag.HAS_COLLECT_LIB)) {
-      if (!isActive) return@launch
-      delay(10000)
-      collectPopularLibraries(appMap)
-      Once.markDone(OnceTag.HAS_COLLECT_LIB)
-    }
   }
 
   private fun generateLCItemFromPackageInfo(
@@ -293,17 +290,18 @@ class HomeViewModel : ViewModel() {
       Constants.VARIANT_APK
     }
 
+    val ai = pi.applicationInfo ?: throw IllegalArgumentException("ApplicationInfo is null")
     return LCItem(
       pi.packageName,
       pi.getAppName().toString(),
-      pi.versionName.toString(),
+      if (pi.isArchivedPackage()) "Archived" else pi.versionName.toString(),
       pi.getVersionCode(),
       pi.firstInstallTime,
       pi.lastUpdateTime,
-      (pi.applicationInfo!!.flags and ApplicationInfo.FLAG_SYSTEM) == ApplicationInfo.FLAG_SYSTEM,
+      (ai.flags and ApplicationInfo.FLAG_SYSTEM) > 0,
       PackageUtils.getAbi(pi).toShort(),
       if (delayInitFeatures) -1 else pi.getFeatures(),
-      pi.applicationInfo!!.targetSdkVersion.toShort(),
+      ai.targetSdkVersion.toShort(),
       variant
     )
   }
@@ -329,7 +327,7 @@ class HomeViewModel : ViewModel() {
       }
       val properties: MutableMap<String, String> = HashMap()
       properties["Version"] = Build.VERSION.SDK_INT.toString()
-      Analytics.trackEvent("OS Version", properties)
+      Telemetry.recordEvent("OS Version", properties)
 
       for (entry in map) {
         if (entry.value > 3 && LCAppUtils.getRuleWithRegex(entry.key, NATIVE) == null) {
@@ -337,7 +335,7 @@ class HomeViewModel : ViewModel() {
           properties["Library name"] = entry.key
           properties["Library count"] = entry.value.toString()
 
-          Analytics.trackEvent("Native Library", properties)
+          Telemetry.recordEvent("Native Library", properties)
         }
       }
 
@@ -397,7 +395,7 @@ class HomeViewModel : ViewModel() {
         properties["Library name"] = entry.key
         properties["Library count"] = entry.value.toString()
 
-        Analytics.trackEvent("$label Library", properties)
+        Telemetry.recordEvent("$label Library", properties)
       }
     }
   }
@@ -429,7 +427,7 @@ class HomeViewModel : ViewModel() {
     fun computeInternal(@LibType type: Int) = runBlocking {
       for (item in appMap.values) {
         if (!isActive) return@runBlocking
-        if (!showSystem && ((item.applicationInfo!!.flags and ApplicationInfo.FLAG_SYSTEM) == ApplicationInfo.FLAG_SYSTEM)) {
+        if (!showSystem && ((item.applicationInfo!!.flags and ApplicationInfo.FLAG_SYSTEM) > 0)) {
           progressCount++
           updateLibRefProgressImpl()
           continue
@@ -471,6 +469,9 @@ class HomeViewModel : ViewModel() {
     if (options and LibReferenceOptions.SHARED_UID > 0) {
       computeInternal(SHARED_UID)
     }
+    if (options and LibReferenceOptions.ACTION > 0) {
+      computeInternal(ACTION)
+    }
 
     referenceMap = map
     matchingRules()
@@ -485,10 +486,15 @@ class HomeViewModel : ViewModel() {
       when (type) {
         NATIVE -> {
           val packageInfo = PackageUtils.getPackageInfo(packageName)
-          computeNativeReferenceInternal(
+          val list = PackageUtils.getNativeDirLibs(packageInfo)
+          val mapped =
+            list.filter { LCAppUtils.checkNativeLibValidation(packageName, it.name, list) }
+              .map { it.name }
+          computeReferenceInternal(
             referenceMap,
             packageName,
-            PackageUtils.getNativeDirLibs(packageInfo)
+            NATIVE,
+            mapped
           )
         }
 
@@ -526,10 +532,14 @@ class HomeViewModel : ViewModel() {
 
         DEX -> {
           val packageInfo = PackageUtils.getPackageInfo(packageName)
-          computeDexReferenceInternal(
+          val list = PackageUtils.getDexList(packageInfo)
+            .filter { it.name.startsWith(packageName).not() }
+            .map { it.name }
+          computeReferenceInternal(
             referenceMap,
             packageName,
-            PackageUtils.getDexList(packageInfo).toList()
+            DEX,
+            list
           )
         }
 
@@ -538,10 +548,11 @@ class HomeViewModel : ViewModel() {
             packageName,
             PackageManager.GET_PERMISSIONS
           )
-          computePermissionReferenceInternal(
+          computeReferenceInternal(
             referenceMap,
             packageName,
-            packageInfo.requestedPermissions
+            PERMISSION,
+            packageInfo.requestedPermissions?.toList()
           )
         }
 
@@ -550,10 +561,11 @@ class HomeViewModel : ViewModel() {
             packageName,
             PackageManager.GET_META_DATA
           )
-          computeMetadataReferenceInternal(
+          computeReferenceInternal(
             referenceMap,
             packageName,
-            packageInfo.applicationInfo?.metaData
+            METADATA,
+            packageInfo.applicationInfo?.metaData?.keySet()
           )
         }
 
@@ -576,22 +588,29 @@ class HomeViewModel : ViewModel() {
           }
         }
 
+        ACTION -> {
+          val packageInfo = PackageUtils.getPackageInfo(packageName)
+          val list = IntentFilterUtils.parseComponentsFromApk(packageInfo.applicationInfo!!.sourceDir)
+            .asSequence()
+            .flatMap { component ->
+              component.intentFilters.asSequence()
+                .flatMap { filter -> filter.actions }
+            }
+            .toSet()
+            .filter { !it.startsWith("android.") }
+          computeReferenceInternal(
+            referenceMap,
+            packageName,
+            ACTION,
+            list
+          )
+        }
+
         else -> {}
       }
     } catch (e: Exception) {
       Timber.e(e)
     }
-  }
-
-  private fun computeNativeReferenceInternal(
-    referenceMap: HashMap<String, Pair<MutableSet<String>, Int>>,
-    packageName: String,
-    list: List<LibStringItem>
-  ) {
-    list.filter { LCAppUtils.checkNativeLibValidation(packageName, it.name, list) }
-      .forEach {
-        referenceMap.putIfAbsent(it.name, mutableSetOf<String>() to NATIVE)?.first?.add(packageName)
-      }
   }
 
   private fun computeComponentReferenceInternal(
@@ -600,34 +619,25 @@ class HomeViewModel : ViewModel() {
     @LibType type: Int,
     components: Array<out ComponentInfo>?
   ) {
-    components.orEmpty()
-      .filter { it.name.startsWith(packageName).not() }
-      .forEach { referenceMap.putIfAbsent(it.name, mutableSetOf<String>() to type)?.first?.add(packageName) }
+    computeReferenceInternal(
+      referenceMap,
+      packageName,
+      type,
+      components.orEmpty().filter { it.name.startsWith(packageName).not() }.map { it.name }
+    )
   }
 
-  private fun computeDexReferenceInternal(
+  private fun computeReferenceInternal(
     referenceMap: HashMap<String, Pair<MutableSet<String>, Int>>,
     packageName: String,
-    list: List<LibStringItem>
+    @LibType type: Int,
+    list: Collection<String>?
   ) {
-    list.filter { it.name.startsWith(packageName).not() }
-      .forEach { referenceMap.putIfAbsent(it.name, mutableSetOf<String>() to DEX)?.first?.add(packageName) }
-  }
-
-  private fun computePermissionReferenceInternal(
-    referenceMap: HashMap<String, Pair<MutableSet<String>, Int>>,
-    packageName: String,
-    list: Array<out String>?
-  ) {
-    list?.forEach { referenceMap.putIfAbsent(it, mutableSetOf<String>() to PERMISSION)?.first?.add(packageName) }
-  }
-
-  private fun computeMetadataReferenceInternal(
-    referenceMap: HashMap<String, Pair<MutableSet<String>, Int>>,
-    packageName: String,
-    bundle: Bundle?
-  ) {
-    bundle?.keySet()?.forEach { referenceMap.putIfAbsent(it, mutableSetOf<String>() to METADATA)?.first?.add(packageName) }
+    list?.forEach {
+      referenceMap.getOrPut(it) { mutableSetOf<String>() to type }.first.apply {
+        add(packageName)
+      }
+    }
   }
 
   private var matchingJob: Job? = null
@@ -648,21 +658,20 @@ class HomeViewModel : ViewModel() {
 
         val refList = mutableListOf<LibReference>()
         val threshold = GlobalValues.libReferenceThreshold
-        val isOnlyNotMarked = GlobalValues.libReferenceOptions and LibReferenceOptions.ONLY_NOT_MARKED > 0
+        val isOnlyNotMarked =
+          GlobalValues.libReferenceOptions and LibReferenceOptions.ONLY_NOT_MARKED > 0
 
-        var rule: Rule?
         for (entry in map) {
-          if (!isActive) {
-            return@let
-          }
+          if (!isActive) return@let
           if (entry.value.first.size >= threshold && entry.key.isNotBlank()) {
-            rule = LCRules.getRule(entry.key, entry.value.second, true)
-            val shouldAdd = if (isOnlyNotMarked) {
-              rule == null && entry.value.second != PERMISSION && entry.value.second != METADATA
+            val ruleType = if (entry.value.second == ACTION) ACTION_IN_RULES else entry.value.second
+            val rule = if (entry.value.second != PERMISSION && entry.value.second != METADATA) {
+              LCRules.getRule(entry.key, ruleType, true)
             } else {
-              true
+              null
             }
-            if (shouldAdd) {
+
+            if (!isOnlyNotMarked || rule == null) {
               refList.add(
                 LibReference(
                   entry.key,
@@ -754,5 +763,10 @@ class HomeViewModel : ViewModel() {
         }
       }
     }
+  }
+
+  fun clearMenuState() {
+    isSearchMenuExpanded = false
+    currentSearchQuery = ""
   }
 }

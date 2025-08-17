@@ -13,6 +13,8 @@ import com.absinthe.libchecker.R
 import com.absinthe.libchecker.api.ApiManager
 import com.absinthe.libchecker.compat.VersionCompat
 import com.absinthe.libchecker.constant.AndroidVersions
+import com.absinthe.libchecker.constant.Constants
+import com.absinthe.libchecker.constant.GlobalFeatures
 import com.absinthe.libchecker.constant.GlobalValues
 import com.absinthe.libchecker.database.Repositories
 import com.absinthe.libchecker.database.entity.LCItem
@@ -20,8 +22,12 @@ import com.absinthe.libchecker.databinding.FragmentPieChartBinding
 import com.absinthe.libchecker.features.chart.BaseChartDataSource
 import com.absinthe.libchecker.features.chart.BaseVariableChartDataSource
 import com.absinthe.libchecker.features.chart.ChartViewModel
+import com.absinthe.libchecker.features.chart.IAndroidSDKChart
 import com.absinthe.libchecker.features.chart.IChartDataSource
+import com.absinthe.libchecker.features.chart.IHeavyWork
 import com.absinthe.libchecker.features.chart.IntegerFormatter
+import com.absinthe.libchecker.features.chart.LOADING_PROGRESS_INFINITY
+import com.absinthe.libchecker.features.chart.LOADING_PROGRESS_MAX
 import com.absinthe.libchecker.features.chart.impl.AABChartDataSource
 import com.absinthe.libchecker.features.chart.impl.ABIChartDataSource
 import com.absinthe.libchecker.features.chart.impl.CompileApiChartDataSource
@@ -39,6 +45,7 @@ import com.absinthe.libchecker.services.WorkerService
 import com.absinthe.libchecker.ui.base.BaseFragment
 import com.absinthe.libchecker.ui.base.SaturationTransformation
 import com.absinthe.libchecker.utils.OsUtils
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.extensions.doOnMainThreadIdle
 import com.absinthe.libchecker.utils.extensions.dp
 import com.absinthe.libchecker.utils.extensions.getColorByAttr
@@ -85,7 +92,7 @@ class ChartFragment :
     SUPPORT_16KB
   }
 
-  private val chartTypeToIconRes = mapOf(
+  private val chartTypeToIconRes = mutableMapOf(
     ChartType.ABI to (R.drawable.ic_logo to R.string.abi_string),
     ChartType.KOTLIN to (com.absinthe.lc.rulesbundle.R.drawable.ic_lib_kotlin to R.string.kotlin_string),
     ChartType.TARGET_SDK to (R.drawable.ic_label_target_sdk to R.string.target_sdk_string),
@@ -93,11 +100,17 @@ class ChartFragment :
     ChartType.COMPILE_SDK to (R.drawable.ic_label_compile_sdk to R.string.compile_sdk_string),
     ChartType.JETPACK_COMPOSE to (com.absinthe.lc.rulesbundle.R.drawable.ic_lib_jetpack_compose to R.string.jetpack_compose_short),
     ChartType.MARKET_DISTRIBUTION to (com.absinthe.lc.rulesbundle.R.drawable.ic_lib_android to R.string.android_dist_label),
-    ChartType.AAB to (R.drawable.ic_aab to R.string.app_bundle),
-    ChartType.SUPPORT_16KB to (R.drawable.ic_16kb_align to R.string.lib_detail_dialog_title_16kb_page_size)
+    ChartType.AAB to (R.drawable.ic_aab to R.string.app_bundle)
   )
   private var currentChartType = ChartType.ABI
   private var currentExpandingView: ExpandingView? = null
+
+  init {
+    if (GlobalFeatures.ENABLE_DETECTING_16KB_PAGE_ALIGNMENT) {
+      chartTypeToIconRes[ChartType.SUPPORT_16KB] =
+        (R.drawable.ic_16kb_align to R.string.lib_detail_dialog_title_16kb_page_size)
+    }
+  }
 
   override fun init() {
     val featureInitialized = !WorkerService.initializingFeatures
@@ -112,8 +125,8 @@ class ChartFragment :
         }
       }
       val view = ExpandingView(requireContext()).apply {
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).also {
-          it.setMargins(4.dp, 4.dp, 4.dp, 4.dp)
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).also { lp ->
+          lp.setMargins(4.dp, 4.dp, 4.dp, 4.dp)
         }
         setContent(it.value.first, getString(it.value.second))
         setOnClickListener { _ ->
@@ -156,12 +169,20 @@ class ChartFragment :
     }
     lifecycleScope.launch {
       lifecycle.repeatOnLifecycle(Lifecycle.State.CREATED) {
-        viewModel.isLoading.collect { isLoading ->
-          if (isLoading) {
-            binding.progressHorizontal.show()
-          } else {
-            binding.progressHorizontal.hide()
-            applyDashboardView()
+        viewModel.loadingProgress.collect { progress ->
+          binding.progressHorizontal.let { indicator ->
+            if (progress < LOADING_PROGRESS_MAX) {
+              if (progress <= 0) {
+                indicator.isIndeterminate = progress == LOADING_PROGRESS_INFINITY
+                indicator.progress = 0
+              } else {
+                indicator.setProgressCompat(progress, true)
+              }
+              indicator.show()
+            } else {
+              indicator.hide()
+              applyDashboardView()
+            }
           }
         }
       }
@@ -189,7 +210,6 @@ class ChartFragment :
   private fun setData(items: List<LCItem>, chartType: ChartType = currentChartType) {
     context ?: return
     currentChartType = chartType
-    viewModel.setLoading(true)
     viewModel.setDetailAbiSwitchVisibility(chartType == ChartType.ABI)
     if (chartView.parent != null) {
       binding.root.removeView(chartView)
@@ -212,6 +232,7 @@ class ChartFragment :
       ChartType.AAB -> setChartData(::generatePieChartView) { AABChartDataSource(items) }
       ChartType.SUPPORT_16KB -> setChartData(::generatePieChartView) { PageSize16KBChartDataSource(items) }
     }
+    Telemetry.recordEvent(Constants.Event.CHART, mapOf(Telemetry.Param.ITEM_ID to chartType))
   }
 
   private fun <T : Chart<*>> setChartData(
@@ -220,6 +241,8 @@ class ChartFragment :
   ) {
     val newChartView = generateChartView()
     val ds = dataSourceProvider()
+    val loadingProgress = if (ds is IHeavyWork) 0 else LOADING_PROGRESS_INFINITY
+    viewModel.setLoadingProgress(loadingProgress)
     viewModel.applyChartData(binding.root, chartView, newChartView, ds)
     chartView = newChartView
     dataSource = ds
@@ -282,6 +305,7 @@ class ChartFragment :
       )
       description.isEnabled = false
       legend.isEnabled = false
+      isDragEnabled = false
       setDrawBorders(false)
       setDrawGridBackground(false)
       setFitBars(true)
@@ -376,7 +400,7 @@ class ChartFragment :
       it.setTitle(dataSource?.getLabelByXValue(requireContext(), x).orEmpty())
       it.setList(dataSource?.getListByXValue(x) ?: emptyList())
 
-      if (dataSource is TargetApiChartDataSource || dataSource is MinApiChartDataSource) {
+      if (dataSource is IAndroidSDKChart) {
         val index = (dataSource as BaseVariableChartDataSource<*>).getListKeyByXValue(x)
         it.setAndroidVersionLabel(AndroidVersions.versions.find { node -> node.version == index })
       } else {

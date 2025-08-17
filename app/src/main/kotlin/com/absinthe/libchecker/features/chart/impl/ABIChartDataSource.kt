@@ -19,12 +19,13 @@ import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
 import com.github.mikephil.charting.utils.MPPointF
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 class ABIChartDataSource(items: List<LCItem>) : BaseChartDataSource<PieChart>(items) {
   override val classifiedMap: HashMap<Int, ChartSourceItem> = HashMap(3)
 
-  override suspend fun fillChartView(chartView: PieChart) {
+  override suspend fun fillChartView(chartView: PieChart, onProgressUpdated: (Int) -> Unit) {
     withContext(Dispatchers.Default) {
       val context = chartView.context ?: return@withContext
       val parties = listOf(
@@ -41,6 +42,7 @@ class ABIChartDataSource(items: List<LCItem>) : BaseChartDataSource<PieChart>(it
       )
 
       for (item in filteredList) {
+        if (!isActive) return@withContext
         if (PackageUtils.hasNoNativeLibs(item.abi.toInt())) {
           classifiedList[NO_LIBS].add(item)
         } else {
@@ -90,7 +92,7 @@ class ABIChartDataSource(items: List<LCItem>) : BaseChartDataSource<PieChart>(it
         for (c in ColorTemplate.MATERIAL_COLORS) colors.add(c)
       }
 
-      dataSet.colors = colors
+      dataSet.setColors(colors)
       // dataSet.setSelectionShift(0f);
       val data = PieData(dataSet).apply {
         setValueFormatter(PercentFormatter())
@@ -111,13 +113,13 @@ class ABIChartDataSource(items: List<LCItem>) : BaseChartDataSource<PieChart>(it
 
   override fun getLabelByXValue(context: Context, x: Int): String {
     return when (x) {
-      IS_64_BIT -> String.format(
-        context.getString(R.string.title_statistics_dialog),
+      IS_64_BIT -> context.getString(
+        R.string.title_statistics_dialog,
         context.getString(R.string.string_64_bit)
       )
 
-      IS_32_BIT -> String.format(
-        context.getString(R.string.title_statistics_dialog),
+      IS_32_BIT -> context.getString(
+        R.string.title_statistics_dialog,
         context.getString(R.string.string_32_bit)
       )
 

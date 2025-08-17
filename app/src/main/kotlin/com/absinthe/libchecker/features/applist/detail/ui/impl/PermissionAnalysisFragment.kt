@@ -11,7 +11,6 @@ import com.absinthe.libchecker.features.applist.detail.ui.adapter.LibStringDiffU
 import com.absinthe.libchecker.features.applist.detail.ui.base.BaseDetailFragment
 import com.absinthe.libchecker.features.applist.detail.ui.base.EXTRA_TYPE
 import com.absinthe.libchecker.features.statistics.bean.LibStringItemChip
-import com.absinthe.libchecker.utils.extensions.getColor
 import com.absinthe.libchecker.utils.extensions.putArguments
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filterNotNull
@@ -75,25 +74,10 @@ class PermissionAnalysisFragment :
     }
   }
 
-  override fun onVisibilityChanged(visible: Boolean) {
-    super.onVisibilityChanged(visible)
-    if (context != null && visible) {
-      if (hasNonGrantedPermissions()) {
-        val label = requireContext().getString(R.string.permission_not_granted)
-        val color = R.color.material_red_400.getColor(requireContext())
-        viewModel.updateProcessMap(mapOf(label to color))
-      } else {
-        viewModel.updateProcessMap(emptyMap())
-      }
-    } else {
-      viewModel.updateProcessMap(viewModel.processesMap)
-    }
-  }
-
   override suspend fun getFilterList(
     searchWords: String?,
     process: String?
-  ): List<LibStringItemChip>? {
+  ): List<LibStringItemChip> {
     return getItems().asSequence()
       .filter { searchWords == null || it.item.name.contains(searchWords, true) || it.item.source?.contains(searchWords, true) == true }
       .filter { process == null || it.item.process != PackageInfo.REQUESTED_PERMISSION_GRANTED.toString() }

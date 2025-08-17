@@ -3,10 +3,10 @@ package com.absinthe.libchecker.features.applist.detail.ui
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.view.ViewGroup
+import androidx.core.net.toUri
 import androidx.core.os.bundleOf
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import com.absinthe.libchecker.BuildConfig
@@ -16,6 +16,7 @@ import com.absinthe.libchecker.constant.Constants
 import com.absinthe.libchecker.features.applist.detail.ui.adapter.AppInfoAdapter
 import com.absinthe.libchecker.features.applist.detail.ui.view.AppInfoBottomSheetView
 import com.absinthe.libchecker.utils.PackageUtils
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.Toasty
 import com.absinthe.libchecker.utils.extensions.dp
 import com.absinthe.libchecker.utils.extensions.setLongClickCopiedToClipboard
@@ -70,13 +71,21 @@ class AppInfoBottomSheetDialogFragment : BaseBottomSheetViewDialogFragment<AppIn
     }
     packageName?.let {
       root.launch.setLongClickCopiedToClipboard(PackageUtils.getLauncherActivity(it))
+      Telemetry.recordEvent(
+        Constants.Event.APP_INFO_BOTTOM_SHEET,
+        mapOf(Telemetry.Param.CONTENT to packageName.toString(), "Action" to "Launch")
+      )
     }
     root.setting.setOnClickListener {
       try {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-          .setData(Uri.parse("package:$packageName"))
+          .setData("package:$packageName".toUri())
           .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
+        Telemetry.recordEvent(
+          Constants.Event.APP_INFO_BOTTOM_SHEET,
+          mapOf(Telemetry.Param.CONTENT to packageName.toString(), "Action" to "Setting")
+        )
       } catch (_: Exception) {
         context?.showToast(R.string.toast_cant_open_app)
       } finally {
@@ -97,6 +106,10 @@ class AppInfoBottomSheetDialogFragment : BaseBottomSheetViewDialogFragment<AppIn
         adapter.data[position].let {
           runCatching {
             startActivity(it.intent)
+            Telemetry.recordEvent(
+              Constants.Event.APP_INFO_BOTTOM_SHEET,
+              mapOf(Telemetry.Param.CONTENT to packageName.toString(), "Action" to it.pii.packageName)
+            )
           }.onFailure {
             context?.let { ctx ->
               Toasty.showShort(ctx, R.string.toast_cant_open_app)
@@ -154,7 +167,7 @@ class AppInfoBottomSheetDialogFragment : BaseBottomSheetViewDialogFragment<AppIn
   private fun getShowMarketList(): List<AppInfoAdapter.AppInfoItem> {
     return PackageManagerCompat.queryIntentActivities(
       Intent(Intent.ACTION_VIEW).also {
-        it.data = Uri.parse("market://details?id=$packageName")
+        it.data = "market://details?id=$packageName".toUri()
       },
       PackageManager.MATCH_DEFAULT_ONLY
     ).filter { it.activityInfo.packageName != BuildConfig.APPLICATION_ID }
@@ -162,7 +175,7 @@ class AppInfoBottomSheetDialogFragment : BaseBottomSheetViewDialogFragment<AppIn
         AppInfoAdapter.AppInfoItem(
           it.activityInfo,
           Intent(Intent.ACTION_VIEW)
-            .setData(Uri.parse("market://details?id=$packageName"))
+            .setData("market://details?id=$packageName".toUri())
             .setComponent(ComponentName(it.activityInfo.packageName, it.activityInfo.name))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         )

@@ -3,7 +3,9 @@ package com.absinthe.libchecker.features.statistics.ui.view
 import android.content.Context
 import android.widget.FrameLayout
 import com.absinthe.libchecker.R
+import com.absinthe.libchecker.constant.Constants
 import com.absinthe.libchecker.constant.GlobalValues
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.extensions.dp
 import com.absinthe.libchecker.utils.extensions.getColor
 import com.absinthe.libchecker.view.app.CheckableChipView
@@ -39,6 +41,10 @@ class LibReferenceMenuItemView(context: Context) : FrameLayout(context) {
         }
         GlobalValues.libReferenceOptions = newOptions
         onCheckedChangeCallback?.invoke(isChecked)
+        Telemetry.recordEvent(
+          Constants.Event.LIB_REF_ADVANCED_MENU_ITEM_CHANGED,
+          mapOf(Telemetry.Param.CONTENT to text, Telemetry.Param.VALUE to isChecked)
+        )
       }
     }
   }

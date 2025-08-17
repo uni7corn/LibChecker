@@ -3,24 +3,26 @@ package com.absinthe.libchecker.features.applist.detail
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
-import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.annotation.RequiresApi
 import androidx.annotation.StringRes
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
 import androidx.core.os.bundleOf
 import androidx.core.text.HtmlCompat
 import androidx.fragment.app.FragmentActivity
 import com.absinthe.libchecker.R
+import com.absinthe.libchecker.constant.Constants
 import com.absinthe.libchecker.features.applist.detail.ui.AppBundleBottomSheetDialogFragment
 import com.absinthe.libchecker.features.applist.detail.ui.AppInstallSourceBSDFragment
 import com.absinthe.libchecker.features.applist.detail.ui.AppPropBottomSheetDialogFragment
 import com.absinthe.libchecker.features.applist.detail.ui.EXTRA_PACKAGE_INFO
 import com.absinthe.libchecker.features.applist.detail.ui.EXTRA_PACKAGE_NAME
 import com.absinthe.libchecker.ui.base.BaseAlertDialogBuilder
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.Toasty
 import com.absinthe.libchecker.utils.UiUtils
 import timber.log.Timber
@@ -59,7 +61,7 @@ object FeaturesDialog {
   }
 
   fun showRxKotlinDialog(context: Context, version: String?) {
-    val drawable = UiUtils.changeDrawableColor(context, R.drawable.ic_reactivex, Color.parseColor("#7F52FF"))
+    val drawable = UiUtils.changeDrawableColor(context, R.drawable.ic_reactivex, "#7F52FF".toColorInt())
     commonShowDialogImpl(
       context,
       drawable,
@@ -71,7 +73,7 @@ object FeaturesDialog {
   }
 
   fun showRxAndroidDialog(context: Context, version: String?) {
-    val drawable = UiUtils.changeDrawableColor(context, R.drawable.ic_reactivex, Color.parseColor("#3DDC84"))
+    val drawable = UiUtils.changeDrawableColor(context, R.drawable.ic_reactivex, "#3DDC84".toColorInt())
     commonShowDialogImpl(
       context,
       drawable,
@@ -178,6 +180,28 @@ object FeaturesDialog {
     )
   }
 
+  fun show16KBCompatDialog(context: Context) {
+    commonShowDialogImpl(
+      context,
+      R.drawable.ic_16kb_compat,
+      R.string.lib_detail_dialog_title_16kb_page_size_compat,
+      R.string.lib_detail_dialog_content_16kb_page_size_compat,
+      version = null,
+      sourceLink = "https://source.android.com/docs/core/architecture/16kb-page-size/16kb-backcompat-option"
+    )
+  }
+
+  fun showMultiArchDialog(context: Context) {
+    commonShowDialogImpl(
+      context,
+      R.drawable.ic_abi_label_multi_arch,
+      R.string.multiArch,
+      R.string.multi_arch_dialog_details,
+      version = null,
+      sourceLink = "https://source.android.com/docs/setup/create/64-bit-builds"
+    )
+  }
+
   private fun commonShowDialogImpl(
     context: Context,
     icon: Drawable,
@@ -222,7 +246,7 @@ object FeaturesDialog {
     val dialog = BaseAlertDialogBuilder(context)
       .setIcon(icon)
       .setTitle(titleRes)
-      .setMessage(messageRes)
+      .setMessage(HtmlCompat.fromHtml(context.getString(messageRes), HtmlCompat.FROM_HTML_MODE_COMPACT))
       .setPositiveButton(android.R.string.ok, null)
 
     versionInfo?.let { info ->
@@ -253,5 +277,9 @@ object FeaturesDialog {
     }
 
     dialog.show()
+    Telemetry.recordEvent(
+      Constants.Event.FEATURE_DIALOG,
+      mapOf(Telemetry.Param.CONTENT to context.getString(titleRes))
+    )
   }
 }

@@ -74,6 +74,12 @@
       app:summary="@string/reload_apps_summary"
       app:title="@string/reload_apps" />
 
+    <Preference
+      app:icon="@drawable/ic_log"
+      app:key="exportLog"
+      app:summary="@string/export_log_summary"
+      app:title="@string/export_log" />
+
   </PreferenceCategory>
 
   <PreferenceCategory
@@ -130,7 +136,7 @@
 
     <rikka.material.preference.MaterialSwitchPreference
       app:defaultValue="true"
-      app:icon="@drawable/ic_appcenter"
+      app:icon="@drawable/ic_firebase_monochrome"
       app:key="analytics"
       app:summary="@string/anonymous_statistics_summary"
       app:title="@string/anonymous_statistics" />

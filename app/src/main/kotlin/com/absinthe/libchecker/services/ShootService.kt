@@ -9,8 +9,8 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.content.res.Configuration
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.IBinder
 import android.os.Process
 import android.os.RemoteCallbackList
@@ -64,11 +64,6 @@ class ShootService : LifecycleService() {
   private val notificationIdShootSuccess = notificationIdShoot + 1
   private val builder by lazy { NotificationCompat.Builder(this, SHOOT_CHANNEL_ID) }
   private val notificationManager by lazy { NotificationManagerCompat.from(this) }
-  private val configuration by lazy {
-    Configuration(resources.configuration).apply {
-      setLocale(GlobalValues.locale)
-    }
-  }
   private val repository = Repositories.lcRepository
   private val listenerList = RemoteCallbackList<OnShootListener>()
 
@@ -118,8 +113,7 @@ class ShootService : LifecycleService() {
 
     notificationManager.apply {
       if (OsUtils.atLeastO()) {
-        val name = createConfigurationContext(configuration).resources
-          .getString(R.string.channel_shoot)
+        val name = getString(R.string.channel_shoot)
         val importance = NotificationManager.IMPORTANCE_DEFAULT
         val channel = NotificationChannel(SHOOT_CHANNEL_ID, name, importance)
         createNotificationChannel(channel)
@@ -248,7 +242,7 @@ class ShootService : LifecycleService() {
               versionCode = info.getVersionCode(),
               installedTime = info.firstInstallTime,
               lastUpdatedTime = info.lastUpdateTime,
-              isSystem = (ai.flags and ApplicationInfo.FLAG_SYSTEM) == ApplicationInfo.FLAG_SYSTEM,
+              isSystem = (ai.flags and ApplicationInfo.FLAG_SYSTEM) > 0,
               abi = PackageUtils.getAbi(info).toShort(),
               targetApi = ai.targetSdkVersion.toShort(),
               nativeLibs = PackageUtils.getNativeDirLibs(info).toJson().orEmpty(),
@@ -295,7 +289,12 @@ class ShootService : LifecycleService() {
       notificationManager.notify(notificationIdShoot, builder.build())
     }
     repository.insertSnapshots(dbList)
-    repository.insert(TimeStampItem(ts, null))
+
+    val systemProps = mutableMapOf<String, String>()
+    systemProps[Constants.SystemProps.RO_BUILD_VERSION_SECURITY_PATCH] = Build.VERSION.SECURITY_PATCH
+    systemProps[Constants.SystemProps.RO_BUILD_ID] = Build.ID
+
+    repository.insert(TimeStampItem(ts, null, systemProps.toJson()))
 
     if (dropPrevious) {
       Timber.i("deleteSnapshotsAndTimeStamp: ${GlobalValues.snapshotTimestamp}")
@@ -314,7 +313,7 @@ class ShootService : LifecycleService() {
 
       builder.setProgress(0, 0, false)
         .setOngoing(false)
-        .setContentTitle(createConfigurationContext(configuration).resources.getString(R.string.noti_shoot_title_saved))
+        .setContentTitle(getString(R.string.noti_shoot_title_saved))
         .setContentText(getFormatDateString(ts))
       notificationManager.notify(notificationIdShootSuccess, builder.build())
     }
@@ -329,11 +328,11 @@ class ShootService : LifecycleService() {
     GlobalValues.snapshotTimestamp = ts
     _isShooting = false
     notifyFinished(ts)
+    ServiceCompat.stopForeground(this@ShootService, ServiceCompat.STOP_FOREGROUND_REMOVE)
     Timber.i("computeSnapshots end")
     isComputing = false
 
     if (stopWhenFinish) {
-      ServiceCompat.stopForeground(this@ShootService, ServiceCompat.STOP_FOREGROUND_REMOVE)
       stopSelf()
     }
   }
@@ -354,7 +353,7 @@ class ShootService : LifecycleService() {
       },
       PendingIntent.FLAG_IMMUTABLE
     )
-    builder.setContentTitle(createConfigurationContext(configuration).resources.getString(R.string.noti_shoot_title))
+    builder.setContentTitle(getString(R.string.noti_shoot_title))
       .setSmallIcon(R.drawable.ic_logo)
       .setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
       .setPriority(NotificationCompat.PRIORITY_LOW)

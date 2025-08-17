@@ -1,5 +1,7 @@
 package com.absinthe.libchecker.constant
 
+import com.absinthe.rulesbundle.Repositories
+
 object Constants {
 
   const val ERROR = -1
@@ -20,7 +22,9 @@ object Constants {
   const val VARIANT_HAP: Short = 1
 
   const val ARMV8_STRING = "arm64-v8a"
+  const val ARMV8_STRING_UNDERLINE = "arm64_v8a"
   const val ARMV7_STRING = "armeabi-v7a"
+  const val ARMV7_STRING_UNDERLINE = "armeabi_v7a"
   const val ARMV5_STRING = "armeabi"
   const val X86_STRING = "x86"
   const val X86_64_STRING = "x86_64"
@@ -89,9 +93,7 @@ object Constants {
   const val COMMAND_DUMP_APPS_INFO_MD = "/dumpAppsInfoMd"
 
   const val RULES_DB_FILE_NAME = "rules.db"
-  const val RULES_DATABASE_NAME = "rules_database"
-
-  const val RENGE_THEME = "rengeTheme"
+  const val RULES_DATABASE_NAME = Repositories.RULES_DATABASE_NAME
 
   const val PREF_UUID = "uuid"
   const val PREF_ADVANCED_OPTIONS = "advancedOptions"
@@ -100,17 +102,25 @@ object Constants {
   const val PREF_SNAPSHOT_OPTIONS = "snapshotOptions"
 
   const val PP_FROM_CLOUD_RULES_UPDATE = "ruleDatabaseUpdate"
+  const val PREF_EXPORT_LOG = "exportLog"
 
   const val PREF_DETAILED_ABI_CHART = "detailedAbiChart"
   const val PREF_RULE_LANGUAGE = "ruleLanguage"
   const val PREF_SNAPSHOT_AUTO_REMOVE_THRESHOLD = "snapshotAutoRemoveThreshold"
 
   object Event {
-    const val LAUNCH_ACTION = "Launch Action"
-    const val SNAPSHOT_CLICK = "Snapshot Click"
-    const val SETTINGS = "Settings"
-    const val LIB_REFERENCE_FILTER_TYPE = "Lib Reference Filter Type"
+    const val APP_INFO_BOTTOM_SHEET = "App Info Bottom Sheet"
+    const val APP_LIST_ADVANCED_MENU_ITEM_CHANGED = "App List Advanced Menu Item Changed"
+    const val CHART = "Chart"
     const val EASTER_EGG = "Easter Egg"
+    const val FEATURE_DIALOG = "Feature Dialog"
+    const val LAUNCH_ACTION = "Launch Action"
+    const val LIB_DETAIL_DIALOG = "Lib Detail Dialog"
+    const val LIB_REFERENCE_FILTER_TYPE = "Lib Reference Filter Type"
+    const val LIB_REF_ADVANCED_MENU_ITEM_CHANGED = "Lib Ref Advanced Menu Item Changed"
+    const val SETTINGS = "Settings"
+    const val SNAPSHOT_ADVANCED_MENU_ITEM_CHANGED = "Snapshot Advanced Menu Item Changed"
+    const val SNAPSHOT_CLICK = "Snapshot Click"
     const val SNAPSHOT_DETAIL_COMPONENT_COUNT = "Snapshot Detail Component Count"
   }
 
@@ -119,5 +129,10 @@ object Constants {
     const val SHIZUKU = "moe.shizuku.privileged.api"
     const val SYSTEMUI = "com.android.systemui"
     const val ANYWHERE_ = "com.absinthe.anywhere_"
+  }
+
+  object SystemProps {
+    const val RO_BUILD_ID = "ro.build.id"
+    const val RO_BUILD_VERSION_SECURITY_PATCH = "ro.build.version.security_patch"
   }
 }

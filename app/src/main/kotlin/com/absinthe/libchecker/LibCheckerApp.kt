@@ -14,9 +14,10 @@ import com.absinthe.libchecker.constant.Constants
 import com.absinthe.libchecker.constant.GlobalValues
 import com.absinthe.libchecker.database.Repositories
 import com.absinthe.libchecker.utils.OsUtils
-import com.absinthe.libchecker.utils.PackageUtils
+import com.absinthe.libchecker.utils.Telemetry
 import com.absinthe.libchecker.utils.UiUtils
 import com.absinthe.libchecker.utils.extensions.dp
+import com.absinthe.libchecker.utils.timber.FileLoggingTree
 import com.absinthe.libchecker.utils.timber.ReleaseTree
 import com.absinthe.libchecker.utils.timber.ThreadAwareDebugTree
 import com.absinthe.libraries.utils.utils.Utility
@@ -24,10 +25,6 @@ import com.absinthe.rulesbundle.LCRemoteRepo
 import com.absinthe.rulesbundle.LCRules
 import com.google.android.material.color.DynamicColors
 import com.jakewharton.processphoenix.ProcessPhoenix
-import com.microsoft.appcenter.AppCenter
-import com.microsoft.appcenter.analytics.Analytics
-import com.microsoft.appcenter.crashes.Crashes
-import java.util.UUID
 import jonathanfinerty.once.Once
 import me.zhanghai.android.appiconloader.coil.AppIconFetcher
 import me.zhanghai.android.appiconloader.coil.AppIconKeyer
@@ -44,10 +41,7 @@ class LibCheckerApp : Application() {
       return
     }
 
-    if (OsUtils.atLeastP()) {
-      HiddenApiBypass.addHiddenApiExemptions("")
-    }
-    bypassPackageParserCheck()
+    bypass()
 
     app = this
 
@@ -55,17 +49,9 @@ class LibCheckerApp : Application() {
       Timber.plant(ThreadAwareDebugTree())
     } else {
       Timber.plant(ReleaseTree())
-
-      if (GlobalValues.isAnonymousAnalyticsEnabled) {
-        AppCenter.start(
-          this,
-          BuildConfig.APP_CENTER_SECRET,
-          Analytics::class.java,
-          Crashes::class.java
-        )
-      }
     }
-
+    Timber.plant(FileLoggingTree(this))
+    Telemetry.setEnable(GlobalValues.isAnonymousAnalyticsEnabled)
     LCRules.init(this)
     LCRules.setRemoteRepo(
       if (GlobalValues.repo == Constants.REPO_GITHUB) {
@@ -118,7 +104,11 @@ class LibCheckerApp : Application() {
     }
   }
 
-  private fun bypassPackageParserCheck() {
+  private fun bypass() {
+    if (OsUtils.atLeastP()) {
+      HiddenApiBypass.addHiddenApiExemptions("")
+    }
+
     // bypass PackageParser check
     // see also: https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/core/java/android/content/pm/PackageParser.java;l=2695
     @Suppress("SoonBlockedPrivateApi")
@@ -131,12 +121,5 @@ class LibCheckerApp : Application() {
   companion object {
     //noinspection StaticFieldLeak
     lateinit var app: Application
-
-    fun generateAuthKey(): Int {
-      if (GlobalValues.uuid.isEmpty()) {
-        GlobalValues.uuid = UUID.randomUUID().toString()
-      }
-      return (GlobalValues.uuid.hashCode() + PackageUtils.getPackageInfo(app.packageName).firstInstallTime).mod(90000) + 10000
-    }
   }
 }

@@ -3,6 +3,7 @@ package com.absinthe.libchecker.features.chart.impl
 import android.content.Context
 import com.absinthe.libchecker.database.entity.LCItem
 import com.absinthe.libchecker.features.chart.BaseVariableChartDataSource
+import com.absinthe.libchecker.features.chart.IAndroidSDKChart
 import com.absinthe.libchecker.features.chart.IntegerFormatter
 import com.absinthe.libchecker.features.chart.OsVersionAxisFormatter
 import com.absinthe.libchecker.utils.PackageUtils
@@ -17,8 +18,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
-class TargetApiChartDataSource(items: List<LCItem>) : BaseVariableChartDataSource<BarChart>(items) {
-  override suspend fun fillChartView(chartView: BarChart) {
+class TargetApiChartDataSource(items: List<LCItem>) :
+  BaseVariableChartDataSource<BarChart>(items),
+  IAndroidSDKChart {
+  override suspend fun fillChartView(chartView: BarChart, onProgressUpdated: (Int) -> Unit) {
     withContext(Dispatchers.Default) {
       val context = chartView.context ?: return@withContext
       val entries: ArrayList<BarEntry> = ArrayList()
@@ -58,7 +61,7 @@ class TargetApiChartDataSource(items: List<LCItem>) : BaseVariableChartDataSourc
         colors.add(UiUtils.getRandomColor())
       }
 
-      dataSet.colors = colors
+      dataSet.setColors(colors)
       // dataSet.setSelectionShift(0f);
       val data = BarData(dataSet).apply {
         setValueTextSize(10f)
