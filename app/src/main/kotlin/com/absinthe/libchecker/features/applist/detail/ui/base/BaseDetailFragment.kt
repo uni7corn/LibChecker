@@ -18,6 +18,7 @@ import com.absinthe.libchecker.R
 import com.absinthe.libchecker.annotation.ACTION
 import com.absinthe.libchecker.annotation.ACTION_IN_RULES
 import com.absinthe.libchecker.annotation.ACTIVITY
+import com.absinthe.libchecker.annotation.ET_NOT_ELF
 import com.absinthe.libchecker.annotation.NATIVE
 import com.absinthe.libchecker.annotation.PERMISSION
 import com.absinthe.libchecker.annotation.isComponentType
@@ -46,6 +47,7 @@ import com.absinthe.libchecker.integrations.monkeyking.ShareCmpInfo
 import com.absinthe.libchecker.ui.base.BaseAlertDialogBuilder
 import com.absinthe.libchecker.ui.base.BaseFragment
 import com.absinthe.libchecker.utils.extensions.addPaddingTop
+import com.absinthe.libchecker.utils.extensions.doOnMainThreadIdle
 import com.absinthe.libchecker.utils.extensions.dp
 import com.absinthe.libchecker.utils.extensions.getColor
 import com.absinthe.libchecker.utils.extensions.launchLibReferencePage
@@ -274,14 +276,22 @@ abstract class BaseDetailFragment<T : ViewBinding> :
     }
 
     Timber.d("navigateToComponent: componentPosition = $componentPosition")
-    (activity as? IDetailContainer)?.collapseAppBar()
-    getRecyclerView().scrollToPosition(componentPosition.coerceAtMost(adapter.itemCount - 1))
 
-    with(getRecyclerView().layoutManager) {
-      if (this is LinearLayoutManager) {
-        scrollToPositionWithOffset(componentPosition, 0)
-      } else if (this is StaggeredGridLayoutManager) {
-        scrollToPositionWithOffset(componentPosition, 0)
+    doOnMainThreadIdle {
+      (activity as? IDetailContainer)?.collapseAppBar()
+      getRecyclerView().scrollToPosition(componentPosition.coerceAtMost(adapter.itemCount - 1))
+
+      // Calculate better offset to provide improved visual experience for highlighting
+      val recyclerView = getRecyclerView()
+      // Place highlighted item about 1/4 from top for better visibility
+      val centerOffset = recyclerView.height / 4
+
+      with(recyclerView.layoutManager) {
+        if (this is LinearLayoutManager) {
+          scrollToPositionWithOffset(componentPosition, centerOffset)
+        } else if (this is StaggeredGridLayoutManager) {
+          scrollToPositionWithOffset(componentPosition, centerOffset)
+        }
       }
     }
 
@@ -349,7 +359,7 @@ abstract class BaseDetailFragment<T : ViewBinding> :
     }
 
     // ELF info
-    if (this is NativeAnalysisFragment) {
+    if (this is NativeAnalysisFragment && item.item.elfInfo.elfType != ET_NOT_ELF) {
       arrayAdapter.add(getString(R.string.lib_detail_elf_info))
       actionMap[arrayAdapter.count - 1] = {
         ELFDetailDialogFragment.newInstance(
@@ -361,7 +371,7 @@ abstract class BaseDetailFragment<T : ViewBinding> :
     }
 
     // Reference
-    if (this is Referable) {
+    if (this is Referable && !componentName.startsWith(".")) {
       arrayAdapter.add(getString(R.string.tab_lib_reference_statistics))
       actionMap[arrayAdapter.count - 1] = {
         val refName = item.rule?.libName ?: componentName
